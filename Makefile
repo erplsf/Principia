@@ -101,7 +101,7 @@ ifeq ($(UNAME_S),Linux)
     else
         SHARED_ARGS += -m32
     endif
-    LIBS += -lsupc++ -lc++fs
+    LIBS += -lsupc++ -lstdc++fs
     TEST_LIBS += -lsupc++
     SHAREDFLAG := -shared
 endif
