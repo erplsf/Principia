@@ -1,4 +1,5 @@
 using System;
+using JetBrains.Annotations;
 using KRPC.Service;
 using KRPC.Service.Attributes;
 
@@ -41,9 +42,8 @@ public static class Principia {
                                       prms.max_steps,
                                       prms.length_integration_tolerance,
                                       prms.speed_integration_tolerance);
-    } else {
-      return null;
     }
+    return null;
   }
 }
 
@@ -82,6 +82,7 @@ public class FlightPlanParameters {
   }
 
   [KRPCProperty]
+  [UsedImplicitly]
   public double Tolerance {
     get => length_integration_tolerance_;
     set  {
@@ -96,6 +97,7 @@ public class FlightPlanParameters {
   }
 
   [KRPCProperty]
+  [UsedImplicitly]
   public long MaxSteps {
     get => max_steps_;
     set {
