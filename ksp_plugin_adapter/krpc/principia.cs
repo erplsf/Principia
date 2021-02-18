@@ -2,6 +2,8 @@ using System;
 using KRPC.Service;
 using KRPC.Service.Attributes;
 
+// ReSharper disable InconsistentNaming
+
 namespace principia.ksp_plugin_adapter.krpc {
 
 [KRPCService (GameScene = GameScene.Flight)]
