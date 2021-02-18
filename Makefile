@@ -111,6 +111,12 @@ ifeq ($(UNAME_S),Darwin)
     SHAREDFLAG := -dynamiclib
 endif
 
+CXX_VERSIONGTEQ11 := $(shell expr `clang++ -dumpversion | cut -f1 -d.` \>= 11)
+
+ifeq ($(CXX_VERSIONGTEQ11),1)
+    SHARED_ARGS += -Wno-elaborated-enum-class
+endif
+
 COMPILER_OPTIONS := -c $(SHARED_ARGS) $(INCLUDES)
 LDFLAGS := $(SHARED_ARGS)
 
