@@ -194,6 +194,9 @@
       <HintPath>../../KSP Assemblies/kRPC/KRPC.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="KSPAssets, Version=1.4.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>..\..\KSP Assemblies\1.11.0\KSPAssets.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
