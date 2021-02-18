@@ -112,7 +112,7 @@ public class ExternalInterface {
     }
   }
 
-  private readonly PrincipiaPluginAdapter adapter_;
+  protected internal readonly PrincipiaPluginAdapter adapter_;
 }
 
 }  // namespace ksp_plugin_adapter

@@ -126,6 +126,7 @@
     <Compile Include="map_node_pool.cs" />
     <Compile Include="marshalers.generated.cs" />
     <Compile Include="ownership_transfer_marshaler.cs" />
+    <Compile Include="principia.cs" />
     <Compile Include="repeated_marshaler.cs" />
     <Compile Include="orbit_analyser.cs" />
     <Compile Include="planetarium_camera_adjuster.cs" />
@@ -188,7 +189,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <Reference Include="KRPC, Version=0.4.8.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>../../KSP Assemblies/kRPC/KRPC.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.

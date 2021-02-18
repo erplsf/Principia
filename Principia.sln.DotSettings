@@ -151,6 +151,7 @@
 	<s:Boolean x:Key="/Default/Environment/Editor/StructuralNavigationIsEnabled/@EntryValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/Environment/ExcludedFiles/FileMasksToSkip/=_002A_002Ecpp/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/Environment/ExcludedFiles/FileMasksToSkip/=_002A_002Ehpp/@EntryIndexedValue">True</s:Boolean>
+	<s:String x:Key="/Default/Environment/InlayHints/CppParameterNameHintsOptions2/ShowParameterNameHints/@EntryValue">Never</s:String>
 	<s:String x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/ExclusionList/=0940d860_002D8332_002D41c9_002Db12d_002D6684cddf3d3f/@EntryIndexedValue">(name)</s:String>
 	<s:String x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/ExclusionList/=2a8a5d4d_002D8c44_002D4492_002Daa98_002D0297a06a069f/@EntryIndexedValue">(format)</s:String>
 	<s:String x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/ExclusionList/=9a31ba5a_002D7652_002D4cfb_002D9b12_002Df8402cf11fd2/@EntryIndexedValue">(message)</s:String>
@@ -158,6 +159,8 @@
 	<s:String x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/ExclusionList/=d51c4446_002Dc6a4_002D4665_002D8a16_002D27f5eadec289/@EntryIndexedValue">KSP.Localization.Localizer.Format</s:String>
 	<s:String x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/ExclusionList/=d9675de5_002D6bd2_002D48b2_002Dbfd8_002Db7fc900fb0d2/@EntryIndexedValue">principia.ksp_plugin_adapter.Log.*</s:String>
 	<s:Boolean x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/HideForParametersArrays/@EntryValue">True</s:Boolean>
+	<s:String x:Key="/Default/Environment/InlayHints/CSharpParameterNameHintsOptions/ShowParameterNameHints/@EntryValue">Never</s:String>
+	<s:String x:Key="/Default/Environment/InlayHints/VBParameterNameHintsOptions/ShowParameterNameHints/@EntryValue">Never</s:String>
 	
 	<s:Boolean x:Key="/Default/Environment/ParameterNameHintsOptions/ShowParameterNameHints/@EntryValue">False</s:Boolean>
 	<s:String x:Key="/Default/Environment/PerformanceGuide/SwitchBehaviour/=Antivirus/@EntryIndexedValue">DO_NOTHING</s:String>
@@ -178,6 +181,10 @@
 	<s:Boolean x:Key="/Default/Environment/PerformanceGuide/SwitchConflictResolutionMode/=Antivirus/@EntryIndexRemoved">True</s:Boolean>
 	<s:String x:Key="/Default/Environment/PerformanceGuide/SwitchConflictResolutionMode/=Roslyn_002Dswea/@EntryIndexedValue">AUTO_FIX</s:String>
 	<s:String x:Key="/Default/Environment/PerformanceGuide/SwitchConflictResolutionMode/=XAML_0020Designer/@EntryIndexedValue">AUTO_FIX</s:String>
+	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EFeature_002EServices_002ECpp_002EDaemon_002EInlayHints_002EParameterHints_002ECppParameterNameHintsOptionsOptionsMigration/@EntryIndexedValue">True</s:Boolean>
+	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EFeature_002EServices_002ECSharp_002EParameterNameHints_002ECSharpParameterNameHintsOptionsAutoFixExclusionListMigration/@EntryIndexedValue">True</s:Boolean>
+	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EFeature_002EServices_002ECSharp_002EParameterNameHints_002ECSharpParameterNameHintsOptionsMigration/@EntryIndexedValue">True</s:Boolean>
+	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EFeature_002EServices_002EVB_002EParameterNameHints_002EVBParameterNameHintsOptionsMigration/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EPsi_002ECSharp_002ECodeStyle_002ECSharpKeepExistingMigration/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EPsi_002ECSharp_002ECodeStyle_002ECSharpPlaceEmbeddedOnSameLineMigration/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/Environment/SettingsMigration/IsMigratorApplied/=JetBrains_002EReSharper_002EPsi_002ECSharp_002ECodeStyle_002ECSharpUseContinuousIndentInsideBracesMigration/@EntryIndexedValue">True</s:Boolean>
