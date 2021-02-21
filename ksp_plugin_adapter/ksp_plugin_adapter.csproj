@@ -118,6 +118,7 @@
     <Compile Include="flight_planner.cs" />
     <Compile Include="gl_lines.cs" />
     <Compile Include="interface.generated.cs" />
+    <Compile Include="krpc\FlightPlan.cs" />
     <Compile Include="krpc\principia.cs" />
     <Compile Include="ksp_plugin_adapter.cs" />
     <Compile Include="interface.cs" />
