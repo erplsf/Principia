@@ -5,7 +5,6 @@
 
 #include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
-#include "testing_utilities/numerics.hpp"
 
 namespace principia {
 namespace testing_utilities {
@@ -65,7 +64,7 @@ std::string BidimensionalDatasetMathematicaInput(std::vector<T> const& x,
   result += "ToExpression[StringReplace[\"\n{";
   for (std::size_t i = 0; i < x.size(); ++i) {
     result += "{";
-    // We use |DebugString(double const)| in order to get enough digits.
+    // We use `DebugString(double const)` in order to get enough digits.
     result += DebugString(DoubleValue(x[i]));
     result += ",";
     result += DebugString(DoubleValue(y[i]));

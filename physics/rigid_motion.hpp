@@ -6,11 +6,14 @@
 #include "base/not_null.hpp"
 #include "base/traits.hpp"
 #include "geometry/affine_map.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/orthogonal_map.hpp"
-#include "geometry/space_transformations.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "physics/degrees_of_freedom.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "serialization/physics.pb.h"
 
 namespace principia {
@@ -23,16 +26,16 @@ using namespace principia::base::_traits;
 using namespace principia::geometry::_affine_map;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_orthogonal_map;
-using namespace principia::geometry::_space_transformations;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
-// The instantaneous motion of |ToFrame| with respect to |FromFrame|.
-// This is the derivative of a |RigidTransformation<FromFrame, ToFrame>|.
-// In order to invert, the |RigidTransformation| is needed, and we need its
+// The instantaneous motion of `ToFrame` with respect to `FromFrame`.
+// This is the derivative of a `RigidTransformation<FromFrame, ToFrame>`.
+// In order to invert, the `RigidTransformation` is needed, and we need its
 // linear part anyway, so we store it (and we forward its action on positions).
 template<typename FromFrame, typename ToFrame>
 class RigidMotion final {
@@ -54,7 +57,7 @@ class RigidMotion final {
       Velocity<ToFrame> const& velocity_of_from_frame_origin);
 
   RigidTransformation<FromFrame, ToFrame> const& rigid_transformation() const;
-  // Returns |rigid_transformation().linear_map()|.
+  // Returns `rigid_transformation().linear_map()`.
   OrthogonalMap<FromFrame, ToFrame> const& orthogonal_map() const;
 
   template<typename F>
@@ -70,12 +73,12 @@ class RigidMotion final {
   template<template<typename, typename> typename SimilarMotion>
   SimilarMotion<FromFrame, ToFrame> Forget() const;
 
-  // A rigid motion expressing that |FromFrame| and |ToFrame| have the same
+  // A rigid motion expressing that `FromFrame` and `ToFrame` have the same
   // axes, origin, and instantaneous motion.
   // This function is enabled only if both frames have the same handedness (this
-  // is a requirement of OrthogonalMap::Identity) and if the |motion| of
-  // FromFrame is a special case of that of |ToFrame| (see the comments on
-  // |FrameMotion|).
+  // is a requirement of OrthogonalMap::Identity) and if the `motion` of
+  // FromFrame is a special case of that of `ToFrame` (see the comments on
+  // `FrameMotion`).
   template<typename F = FromFrame,
            typename T = ToFrame,
            typename = std::enable_if_t<(F::handedness == T::handedness &&
@@ -93,7 +96,7 @@ class RigidMotion final {
  private:
   RigidTransformation<FromFrame, ToFrame> rigid_transformation_;
   // d/dt rigid_transformation⁻¹(basis of ToFrame). The positively oriented
-  // orthogonal bases of |FromFrame| are acted upon faithfully and transitively
+  // orthogonal bases of `FromFrame` are acted upon faithfully and transitively
   // by SO(FromFrame), so this lies in the tangent space, i.e., the Lie algebra
   // 𝖘𝔬(FromFrame) ≅ FromFrame ∧ FromFrame.
   AngularVelocity<FromFrame> angular_velocity_of_to_frame_;
@@ -114,7 +117,7 @@ RigidMotion<FromFrame, ToFrame> operator*(
     RigidMotion<ThroughFrame, ToFrame> const& left,
     RigidMotion<FromFrame, ThroughFrame> const& right);
 
-// A |RigidTransformation|, its first derivative (a |RigidMotion|), and its
+// A `RigidTransformation`, its first derivative (a `RigidMotion`), and its
 // second derivative (angular and linear accelerations).
 template<typename FromFrame, typename ToFrame>
 class AcceleratedRigidMotion final {
@@ -158,7 +161,6 @@ std::ostream& operator<<(
 
 using internal::AcceleratedRigidMotion;
 using internal::RigidMotion;
-using internal::RigidTransformation;
 
 }  // namespace _rigid_motion
 }  // namespace physics

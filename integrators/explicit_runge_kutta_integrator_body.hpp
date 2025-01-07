@@ -5,13 +5,13 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
-#include <optional>
+#include <memory>
 #include <vector>
 
 #include "base/for_all_of.hpp"
-#include "base/jthread.hpp"
 #include "geometry/sign.hpp"
 #include "glog/logging.h"
+#include "numerics/double_precision.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
 
@@ -21,11 +21,9 @@ namespace _explicit_runge_kutta_integrator {
 namespace internal {
 
 using namespace principia::base::_for_all_of;
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_sign;
 using namespace principia::numerics::_double_precision;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 
 template<typename Method, typename ODE_>
@@ -107,7 +105,7 @@ Solve(typename ODE::IndependentVariable const& s_final) {
   }
 
   while (abs_h <= Abs((s_final - s.value) - s.error)) {
-    // Runge-Kutta iteration; fills |k|.
+    // Runge-Kutta iteration; fills `k`.
     for (int i = 0; i < stages_; ++i) {
       if (i == 0 && first_same_as_last) {
         // TODO(phl): Use pointers to avoid copying big objects.
@@ -129,10 +127,9 @@ Solve(typename ODE::IndependentVariable const& s_final) {
               y_stage = y.value + Σⱼ_aᵢⱼ_kⱼ;
             });
 
-        termination_condition::UpdateWithAbort(
+        status.Update(
             equation.compute_derivative(
-                s.value + (s.error + c[i] * h), y_stage, f),
-            status);
+                s.value + (s.error + c[i] * h), y_stage, f));
       }
       for_all_of(f, k[i]).loop([h](auto const& f, auto& kᵢ) {
         kᵢ = h * f;
@@ -143,7 +140,7 @@ Solve(typename ODE::IndependentVariable const& s_final) {
     DependentVariableDifferences Σᵢ_bᵢ_kᵢ{};
     for (int i = 0; i < stages_; ++i) {
       for_all_of(k[i], y, Δy, Σᵢ_bᵢ_kᵢ)
-          .loop([&a, &b, i](
+          .loop([&b, i](
                     auto const& kᵢ, auto const& y, auto& Δy, auto& Σᵢ_bᵢ_kᵢ) {
             Σᵢ_bᵢ_kᵢ += b[i] * kᵢ;
             Δy = Σᵢ_bᵢ_kᵢ;
@@ -160,8 +157,8 @@ Solve(typename ODE::IndependentVariable const& s_final) {
       y.Increment(Δy);
     });
 
-    RETURN_IF_STOPPED;
     append_state(current_state);
+    RETURN_IF_STOPPED;  // After the state has been updated.
     if (absl::IsAborted(status)) {
       return status;
     }
@@ -201,7 +198,7 @@ ExplicitRungeKuttaIntegrator<Method, ODE_>::
 NewInstance(InitialValueProblem<ODE> const& problem,
             AppendState const& append_state,
             typename ODE::IndependentVariableDifference const& step) const {
-  // Cannot use |make_not_null_unique| because the constructor of |Instance| is
+  // Cannot use `make_not_null_unique` because the constructor of `Instance` is
   // private.
   return std::unique_ptr<Instance>(
       new Instance(problem, append_state, step, *this));

@@ -2,6 +2,9 @@
 
 #include <string>
 
+#include "base/not_null.hpp"
+#include "base/tags.hpp"
+#include "numerics/fma.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "serialization/numerics.pb.h"
@@ -12,6 +15,8 @@ namespace _double_precision {
 namespace internal {
 
 using namespace principia::base::_not_null;
+using namespace principia::base::_tags;
+using namespace principia::numerics::_fma;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 
@@ -19,44 +24,79 @@ using namespace principia::quantities::_quantities;
 // type of the value must be an affine space.  The notations follow [HLB08].
 template<typename T>
 struct DoublePrecision final {
-  constexpr DoublePrecision() = default;
+  constexpr DoublePrecision();
 
+  explicit constexpr DoublePrecision(uninitialized_t);
   explicit constexpr DoublePrecision(T const& value);
 
-  // Compensated summation.  This is less precise, but more efficient, than
-  // |operator-=| or |operator+=|.  Unlike |QuickTwoSum|, these functions don't
-  // DCHECK their argument, so the caller must ensure that |right| is small
-  // enough.
-  DoublePrecision<T>& Decrement(Difference<T> const& right);
-  DoublePrecision<T>& Increment(Difference<T> const& right);
+  // This is correct assuming that left and right have non-overlapping
+  // mantissas.
+  friend auto operator<=>(DoublePrecision const& left,
+                          DoublePrecision const& right) = default;
 
   DoublePrecision<T>& operator+=(DoublePrecision<Difference<T>> const& right);
   DoublePrecision<T>& operator+=(Difference<T> const& right);
   DoublePrecision<T>& operator-=(DoublePrecision<Difference<T>> const& right);
   DoublePrecision<T>& operator-=(Difference<T> const& right);
 
+  // Compensated summation.  This is less precise, but more efficient, than
+  // `operator-=` or `operator+=`.  Unlike `QuickTwoSum`, these functions don't
+  // DCHECK their argument, so the caller must ensure that `right` is small
+  // enough.
+  DoublePrecision<T>& Decrement(Difference<T> const& right);
+  DoublePrecision<T>& Increment(Difference<T> const& right);
+
   void WriteToMessage(not_null<serialization::DoublePrecision*> message) const;
   static DoublePrecision ReadFromMessage(
       serialization::DoublePrecision const& message);
 
-  T value{};
-  Difference<T> error{};
+  T value;
+  Difference<T> error;
 };
 
-// |scale| must be a signed power of two or zero.
+// `scale` must be a signed power of two or zero.
 template<typename T, typename U>
 DoublePrecision<Product<T, U>> Scale(T const& scale,
                                      DoublePrecision<U> const& right);
 
 // Returns the exact product of its arguments.  Note that this function checks
-// whether |UseHardwareFMA| is true.  If the value of that flag is already known
+// whether `UseHardwareFMA` is true.  If the value of that flag is already known
 // from context, it may be preferable to either:
 // — use VeltkampDekkerProduct(a, b) below;
 // — directly compute value = a * b, error = FusedMultiplySubtract(a, b, value).
-template<typename T, typename U>
+template<FMAPolicy fma_policy = FMAPolicy::Auto, typename T, typename U>
 DoublePrecision<Product<T, U>> TwoProduct(T const& a, U const& b);
 
-// Same as |TwoProduct|, but never uses FMA.
+// Returns the exact value of `a * b + c` if `|a * b|` is small compared to
+// `|c|`. See [SZ05], section 2.1.
+template<FMAPolicy fma_policy = FMAPolicy::Auto, typename T, typename U>
+DoublePrecision<Product<T, U>> TwoProductAdd(T const& a,
+                                             U const& b,
+                                             Product<T, U> const& c);
+
+// Returns the exact value of `a * b - c` if `|a * b|` is small compared to
+// `|c|`. See [SZ05], section 2.1.
+template<FMAPolicy fma_policy = FMAPolicy::Auto, typename T, typename U>
+DoublePrecision<Product<T, U>> TwoProductSubtract(T const& a,
+                                                  U const& b,
+                                                  Product<T, U> const& c);
+
+// Returns the exact value of `-a * b + c` if `|a * b|` is small compared to
+// `|c|`. See [SZ05], section 2.1.
+template<FMAPolicy fma_policy = FMAPolicy::Auto, typename T, typename U>
+DoublePrecision<Product<T, U>> TwoProductNegatedAdd(T const& a,
+                                                    U const& b,
+                                                    Product<T, U> const& c);
+
+// Returns the exact value of `-a * b - c` if `|a * b|` is small compared to
+// `|c|`. See [SZ05], section 2.1.
+template<FMAPolicy fma_policy = FMAPolicy::Auto, typename T, typename U>
+DoublePrecision<Product<T, U>>
+TwoProductNegatedSubtract(T const& a,
+                          U const& b,
+                          Product<T, U> const& c);
+
+// Same as `TwoProduct`, but never uses FMA.
 template<typename T, typename U>
 constexpr DoublePrecision<Product<T, U>> VeltkampDekkerProduct(T const& a,
                                                                U const& b);
@@ -66,11 +106,17 @@ constexpr DoublePrecision<Product<T, U>> VeltkampDekkerProduct(T const& a,
 template<typename T, typename U>
 constexpr DoublePrecision<Sum<T, U>> QuickTwoSum(T const& a, U const& b);
 
+// Computes the exact difference of a and b.  The arguments must be such that
+// |a| >= |b| or a == 0.
+template<typename T, typename U>
+constexpr DoublePrecision<Difference<T, U>> QuickTwoDifference(T const& a,
+                                                               U const& b);
+
 // Computes the exact sum of a and b.
 template<typename T, typename U>
 constexpr DoublePrecision<Sum<T, U>> TwoSum(T const& a, U const& b);
 
-// |TwoDifference| may have any of the following signatures:
+// `TwoDifference` may have any of the following signatures:
 //   1. Point × Point → Vector;
 //   2. Point × Vector → Point;
 //   3. Vector × Vector → Vector;
@@ -87,35 +133,57 @@ template<typename T, typename U, typename = Difference<Difference<T, U>, T>>
 constexpr DoublePrecision<Difference<T, U>> TwoDifference(T const& a,
                                                           U const& b);
 
-DoublePrecision<Angle> Mod2π(DoublePrecision<Angle> const& θ);
-
-template<typename T>
-bool operator==(DoublePrecision<T> const& left,
-                DoublePrecision<T> const& right);
-
-template<typename T>
-bool operator!=(DoublePrecision<T> const& left,
-                DoublePrecision<T> const& right);
-
-// |T| must be a vector.
+// `T` must be a vector.
 template<typename T>
 DoublePrecision<Difference<T>> operator+(DoublePrecision<T> const& left);
 
-// |T| must be a vector.
+// `T` must be a vector.
 template<typename T>
 DoublePrecision<Difference<T>> operator-(DoublePrecision<T> const& left);
+
+template<typename T, typename U>
+DoublePrecision<Sum<T, U>> operator+(T const& left,
+                                     DoublePrecision<U> const& right);
+
+template<typename T, typename U>
+DoublePrecision<Sum<T, U>> operator+(DoublePrecision<T> const& left,
+                                     U const& right);
 
 template<typename T, typename U>
 DoublePrecision<Sum<T, U>> operator+(DoublePrecision<T> const& left,
                                      DoublePrecision<U> const& right);
 
 template<typename T, typename U>
+DoublePrecision<Difference<T, U>> operator-(T const& left,
+                                            DoublePrecision<U> const& right);
+
+template<typename T, typename U>
+DoublePrecision<Difference<T, U>> operator-(DoublePrecision<T> const& left,
+                                            U const& right);
+
+template<typename T, typename U>
 DoublePrecision<Difference<T, U>> operator-(DoublePrecision<T> const& left,
                                             DoublePrecision<U> const& right);
 
 template<typename T, typename U>
+DoublePrecision<Product<T, U>> operator*(T const& left,
+                                         DoublePrecision<U> const& right);
+
+template<typename T, typename U>
+DoublePrecision<Product<T, U>> operator*(DoublePrecision<T> const& left,
+                                         U const& right);
+
+template<typename T, typename U>
 DoublePrecision<Product<T, U>> operator*(DoublePrecision<T> const& left,
                                          DoublePrecision<U> const& right);
+
+template<typename T, typename U>
+DoublePrecision<Quotient<T, U>> operator/(T const& left,
+                                          DoublePrecision<U> const& right);
+
+template<typename T, typename U>
+DoublePrecision<Quotient<T, U>> operator/(DoublePrecision<T> const& left,
+                                          U const& right);
 
 template<typename T, typename U>
 DoublePrecision<Quotient<T, U>> operator/(DoublePrecision<T> const& left,
@@ -131,9 +199,14 @@ std::ostream& operator<<(std::ostream& os,
 }  // namespace internal
 
 using internal::DoublePrecision;
-using internal::Mod2π;
+using internal::QuickTwoDifference;
+using internal::QuickTwoSum;
 using internal::TwoDifference;
 using internal::TwoProduct;
+using internal::TwoProductAdd;
+using internal::TwoProductNegatedAdd;
+using internal::TwoProductNegatedSubtract;
+using internal::TwoProductSubtract;
 using internal::TwoSum;
 using internal::VeltkampDekkerProduct;
 

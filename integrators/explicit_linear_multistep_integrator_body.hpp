@@ -3,15 +3,12 @@
 #include "integrators/explicit_linear_multistep_integrator.hpp"
 
 #include <algorithm>
-#include <list>
+#include <memory>
 #include <utility>
-#include <vector>
 
 #include "base/for_all_of.hpp"
-#include "base/jthread.hpp"
 #include "geometry/serialization.hpp"
-#include "integrators/explicit_runge_kutta_integrator.hpp"
-#include "integrators/methods.hpp"
+#include "integrators/explicit_runge_kutta_integrator.hpp"  // 🧙 For _explicit_runge_kutta_integrator.  // NOLINT
 
 namespace principia {
 namespace integrators {
@@ -19,7 +16,6 @@ namespace _explicit_linear_multistep_integrator {
 namespace internal {
 
 using namespace principia::base::_for_all_of;
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_serialization;
 
 int const startup_step_divisor = 16;
@@ -42,8 +38,8 @@ ExplicitLinearMultistepIntegrator<Method, ODE_>::Instance::Solve(
   if (!starter_.started()) {
     starter_.Solve(s_final);
 
-    // If |s_final| is not large enough, we may not have generated enough
-    // points.  Bail out, we'll continue the next time |Solve| is called.
+    // If `s_final` is not large enough, we may not have generated enough
+    // points.  Bail out, we'll continue the next time `Solve` is called.
     if (!starter_.started()) {
       return absl::OkStatus();
     }
@@ -77,7 +73,7 @@ ExplicitLinearMultistepIntegrator<Method, ODE_>::Instance::Solve(
 
     // See [HW10], equation (7).  Note that our indices are numbered
     // consistently with our implementation of the symmetric linear multistep
-    // integrator, so index |j| in [HW10] becomes index |k - j| below.  This
+    // integrator, so index `j` in [HW10] becomes index `k - j` below.  This
     // makes our formula more similar to equation (6) of [HW10].
     for (int j = 1; j <= k; ++j) {
       --it;
@@ -118,15 +114,14 @@ ExplicitLinearMultistepIntegrator<Method, ODE_>::Instance::Solve(
           y = yₙ₊₁;
         });
     current_step.y = std::move(yₙ₊₁);
-    termination_condition::UpdateWithAbort(
-        equation.compute_derivative(s.value, y_stage, current_step.yʹ),
-        status);
+    status.Update(
+        equation.compute_derivative(s.value, y_stage, current_step.yʹ));
     starter_.Push(std::move(current_step));
 
     // Inform the caller of the new state.
-    RETURN_IF_STOPPED;
     current_state.s = s;
     append_state(current_state);
+    RETURN_IF_STOPPED;  // After the state has been updated.
     if (absl::IsAborted(status)) {
       return status;
     }
@@ -196,7 +191,7 @@ ExplicitLinearMultistepIntegrator<Method, ODE_>::NewInstance(
     InitialValueProblem<ODE> const& problem,
     AppendState const& append_state,
     IndependentVariableDifference const& step) const {
-  // Cannot use |make_not_null_unique| because the constructor of |Instance| is
+  // Cannot use `make_not_null_unique` because the constructor of `Instance` is
   // private.
   return std::unique_ptr<Instance>(
       new Instance(problem, append_state, step, *this));

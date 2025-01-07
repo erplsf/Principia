@@ -2,11 +2,14 @@
 #include <optional>
 #include <map>
 #include <string>
-#include <tuple>
 #include <vector>
 
+#include "astronomy/epoch.hpp"
 #include "astronomy/frames.hpp"
 #include "base/not_null.hpp"
+#include "geometry/barycentre_calculator.hpp"
+#include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/orthogonal_map.hpp"
 #include "geometry/rotation.hpp"
@@ -15,19 +18,24 @@
 #include "gtest/gtest.h"
 #include "integrators/integrators.hpp"
 #include "integrators/methods.hpp"
+#include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
 #include "mathematica/logger.hpp"
+#include "mathematica/mathematica.hpp"
 #include "physics/continuous_trajectory.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/kepler_orbit.hpp"
 #include "physics/rigid_motion.hpp"
+#include "physics/rotating_body.hpp"
 #include "physics/solar_system.hpp"
 #include "quantities/astronomy.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 #include "testing_utilities/solar_system_factory.hpp"
 
@@ -141,10 +149,10 @@ class SolarSystemDynamicsTest : public ::testing::Test {
     auto const expected_parent_dof =
         expected_system.degrees_of_freedom(parent_name);
 
-    // We transform to a frame in which |parent| has the z-axis as its rotation
-    // axis by rotating around the normal to Earth's and |parent|'s rotation
+    // We transform to a frame in which `parent` has the z-axis as its rotation
+    // axis by rotating around the normal to Earth's and `parent`'s rotation
     // axes.
-    // If |parent| is the Sun, we use the normal to the invariable plane instead
+    // If `parent` is the Sun, we use the normal to the invariable plane instead
     // of the Sun's axis.
     // TODO(egg): perhaps rotating bodies should export a rotation to their
     // celestial reference frame, we'll use that in the plugin too.

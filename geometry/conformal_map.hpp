@@ -1,9 +1,10 @@
 #pragma once
 
+#include "base/concepts.hpp"
+#include "base/mappable.hpp"
 #include "base/not_null.hpp"
-#include "base/traits.hpp"
 #include "geometry/frame.hpp"
-#include "geometry/homothecy.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/linear_map.hpp"
 #include "geometry/quaternion.hpp"
 #include "geometry/rotation.hpp"
@@ -14,26 +15,26 @@
 namespace principia {
 namespace geometry {
 
-FORWARD_DECLARE_FROM(homothecy,
-                     TEMPLATE(typename Scalar,
-                              typename FromFrame,
-                              typename ToFrame) class,
-                     Homothecy);
-FORWARD_DECLARE_FROM(orthogonal_map,
-                     TEMPLATE(typename FromFrame, typename ToFrame) class,
-                     OrthogonalMap);
+FORWARD_DECLARE(TEMPLATE(typename Scalar,
+                         typename FromFrame,
+                         typename ToFrame) class,
+                Homothecy,
+                FROM(homothecy),
+                INTO(conformal_map));
+FORWARD_DECLARE(TEMPLATE(typename FromFrame, typename ToFrame) class,
+                OrthogonalMap,
+                FROM(orthogonal_map),
+                INTO(conformal_map));
 
 namespace _conformal_map {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_mappable;
 using namespace principia::base::_not_null;
-using namespace principia::base::_traits;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_linear_map;
-using namespace principia::geometry::_homothecy;
-using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_quaternion;
 using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_signature;
@@ -75,19 +76,13 @@ class ConformalMap : public LinearMap<ConformalMap<Scalar, FromFrame, ToFrame>,
   OrthogonalMap<FromFrame, ToFrame> orthogonal_map¹₁() const;
 
   void WriteToMessage(not_null<serialization::LinearMap*> message) const;
-  template<typename F = FromFrame,
-           typename T = ToFrame,
-           typename = std::enable_if_t<is_serializable_v<F> &&
-                                       is_serializable_v<T>>>
-  static ConformalMap ReadFromMessage(serialization::LinearMap const& message);
+  static ConformalMap ReadFromMessage(serialization::LinearMap const& message)
+    requires serializable<FromFrame> && serializable<ToFrame>;
 
   void WriteToMessage(not_null<serialization::ConformalMap*> message) const;
-  template<typename F = FromFrame,
-           typename T = ToFrame,
-           typename = std::enable_if_t<is_serializable_v<F> &&
-                                       is_serializable_v<T>>>
   static ConformalMap ReadFromMessage(
-      serialization::ConformalMap const& message);
+      serialization::ConformalMap const& message)
+    requires serializable<FromFrame> && serializable<ToFrame>;
 
  private:
   ConformalMap(Scalar const& scale,

@@ -3,30 +3,32 @@
 #include <iterator>
 
 #include "absl/container/btree_map.h"
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For forward declarations.
 #include "base/not_null.hpp"
-#include "physics/discrete_trajectory_segment_range.hpp"
 #include "physics/discrete_trajectory_types.hpp"
 
 namespace principia {
 
 namespace testing_utilities {
-FORWARD_DECLARE_FROM(discrete_trajectory_factories,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectoryFactoriesFriend);
+FORWARD_DECLARE(TEMPLATE(typename Frame) class,
+                DiscreteTrajectoryFactoriesFriend,
+                FROM(discrete_trajectory_factories));
 }  // namespace testing_utilities
 
 namespace physics {
 
-FORWARD_DECLARE_FROM(discrete_trajectory,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectory);
-FORWARD_DECLARE_FROM(discrete_trajectory_iterator,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectoryIterator);
-FORWARD_DECLARE_FROM(discrete_trajectory_segment,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectorySegment);
+FORWARD_DECLARE(TEMPLATE(typename Frame) class,
+                DiscreteTrajectory,
+                FROM(discrete_trajectory),
+                INTO(discrete_trajectory_segment_iterator));
+FORWARD_DECLARE(TEMPLATE(typename Frame) class,
+                DiscreteTrajectoryIterator,
+                FROM(discrete_trajectory_iterator),
+                INTO(discrete_trajectory_segment_iterator));
+FORWARD_DECLARE(TEMPLATE(typename Frame) class,
+                DiscreteTrajectorySegment,
+                FROM(discrete_trajectory_segment),
+                INTO(discrete_trajectory_segment_iterator));
 
 class DiscreteTrajectoryIteratorTest;
 class DiscreteTrajectorySegmentIteratorTest;
@@ -36,10 +38,7 @@ namespace _discrete_trajectory_segment_iterator {
 namespace internal {
 
 using namespace principia::base::_not_null;
-using namespace principia::physics::_discrete_trajectory;
-using namespace principia::physics::_discrete_trajectory_iterator;
-using namespace principia::physics::_discrete_trajectory_segment;
-using namespace principia::physics::_discrete_trajectory_segment_range;
+using namespace principia::physics::_discrete_trajectory_types;
 
 template<typename Frame>
 class DiscreteTrajectorySegmentIterator {
@@ -71,8 +70,7 @@ class DiscreteTrajectorySegmentIterator {
 
   bool is_begin() const;
   bool is_end() const;
-  DiscreteTrajectorySegmentRange<DiscreteTrajectorySegmentIterator>
-  segments() const;
+  DiscreteTrajectorySegmentIterator EndSegment() const;
 
   typename Segments::iterator iterator() const;
 

@@ -2,9 +2,11 @@
 #define PRINCIPIA_INTEGRATORS_INTEGRATORS_HPP_
 
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "absl/status/status.h"
+#include "base/concepts.hpp"
 #include "base/not_null.hpp"
 #include "geometry/instant.hpp"
 #include "integrators/ordinary_differential_equations.hpp"
@@ -17,8 +19,8 @@ namespace integrators {
 namespace _integrators {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_not_null;
-using namespace principia::base::_traits;
 using namespace principia::geometry::_instant;
 using namespace principia::integrators::_ordinary_differential_equations;
 using namespace principia::numerics::_double_precision;
@@ -42,13 +44,13 @@ class Integrator {
     virtual ~Instance() = default;
 
     // The subclass must document the time (or independent variable) passed to
-    // the last call to |append_state|.
+    // the last call to `append_state`.
     virtual absl::Status Solve(IndependentVariable const& s_final) = 0;
 
     // The equation integrated by this instance.
     ODE const& equation() const;
 
-    // The |AppendState| function.
+    // The `AppendState` function.
     AppendState const& append_state() const;
 
     // The last instant integrated by this instance.
@@ -61,7 +63,7 @@ class Integrator {
     // Performs a copy of this object.
     virtual not_null<std::unique_ptr<Instance>> Clone() const = 0;
 
-    // |ReadFromMessage| is specific to each subclass because of the functions.
+    // `ReadFromMessage` is specific to each subclass because of the functions.
     virtual void WriteToMessage(
         not_null<serialization::IntegratorInstance*> message) const;
 
@@ -86,10 +88,10 @@ class FixedStepSizeIntegrator : public Integrator<ODE_> {
   using ODE = ODE_;
   using typename Integrator<ODE>::AppendState;
 
-  // The last call to |append_state| has a |state.time.value| equal to the
-  // unique |Instant| of the form |t_final + n * step| in
-  // ]t_final - step, t_final].  |append_state| will be called with
-  // |state.time.values|s at intervals differing from |step| by at most one ULP.
+  // The last call to `append_state` has a `state.time.value` equal to the
+  // unique `Instant` of the form `t_final + n * step` in
+  // ]t_final - step, t_final].  `append_state` will be called with
+  // `state.time.values`s at intervals differing from `step` by at most one ULP.
   class Instance : public Integrator<ODE>::Instance {
    public:
     // The time step used by this instance.
@@ -100,12 +102,11 @@ class FixedStepSizeIntegrator : public Integrator<ODE_> {
 
     void WriteToMessage(
         not_null<serialization::IntegratorInstance*> message) const override;
-    template<typename S = typename ODE::State,
-             typename = std::enable_if_t<is_serializable_v<S>>>
     static not_null<std::unique_ptr<typename Integrator<ODE>::Instance>>
     ReadFromMessage(serialization::IntegratorInstance const& message,
                     ODE const& equation,
-                    AppendState const& append_state);
+                    AppendState const& append_state)
+      requires serializable<typename ODE_::State>;
 
    protected:
     Instance(InitialValueProblem<ODE> const& problem,
@@ -115,7 +116,7 @@ class FixedStepSizeIntegrator : public Integrator<ODE_> {
     Time const step_;
   };
 
-  // The factory function for |Instance|, above.  It ensures that the instance
+  // The factory function for `Instance`, above.  It ensures that the instance
   // has a back-pointer to its integrator.
   virtual not_null<std::unique_ptr<typename Integrator<ODE>::Instance>>
   NewInstance(InitialValueProblem<ODE> const& problem,
@@ -144,13 +145,13 @@ class AdaptiveStepSizeIntegrator : public Integrator<ODE_> {
       typename ODE::IndependentVariableDifference;
   using typename Integrator<ODE>::AppendState;
 
-  // This functor is called at each step, with the |current_step_size| used by
-  // the integrator and the estimated |error| on that step.  It returns the
+  // This functor is called at each step, with the `current_step_size` used by
+  // the integrator and the estimated `error` on that step.  It returns the
   // ratio of a tolerance to some norm of the error.  The step is recomputed
   // with a smaller step size if the result is less than 1, and accepted
   // otherwise.
   // In both cases, the new step size is chosen so as to try and make the
-  // result of the next call to this functor close to |safety_factor|.
+  // result of the next call to this functor close to `safety_factor`.
   using ToleranceToErrorRatio = std::function<double(
       IndependentVariableDifference const& current_step_size,
       typename ODE::State const& state,
@@ -162,7 +163,7 @@ class AdaptiveStepSizeIntegrator : public Integrator<ODE_> {
                std::int64_t max_steps,
                bool last_step_is_exact);
 
-    // |max_steps| is infinite and the last step is exact.
+    // `max_steps` is infinite and the last step is exact.
     Parameters(IndependentVariableDifference const& first_step,
                double safety_factor);
 
@@ -174,21 +175,21 @@ class AdaptiveStepSizeIntegrator : public Integrator<ODE_> {
             message);
 
     // The first step tried by the integrator. It must have the same sign as
-    // |problem.t_final - initial_state.time.value|.
+    // `problem.t_final - initial_state.time.value`.
     IndependentVariableDifference const first_step;
     // This number must be in ]0, 1[.  Higher values increase the chance of step
     // rejection, lower values yield smaller steps.
     double const safety_factor;
-    // Integration will stop after |*max_steps| even if it has not reached
-    // |t_final|.
+    // Integration will stop after `*max_steps` even if it has not reached
+    // `t_final`.
     std::int64_t const max_steps;
-    // If true, the he last call to |append_state| has
-    // |state.time.value == t_final| (unless |max_steps| is reached).  Otherwise
-    // it may have |state.time.value < t_final|.
+    // If true, the he last call to `append_state` has
+    // `state.time.value == t_final` (unless `max_steps` is reached).  Otherwise
+    // it may have `state.time.value < t_final`.
     bool const last_step_is_exact;
   };
 
-  // The last call to |append_state| will have |state.time.value == t_final|.
+  // The last call to `append_state` will have `state.time.value == t_final`.
   class Instance : public Integrator<ODE>::Instance {
    public:
     // The integrator corresponding to this instance.
@@ -196,13 +197,12 @@ class AdaptiveStepSizeIntegrator : public Integrator<ODE_> {
 
     void WriteToMessage(
         not_null<serialization::IntegratorInstance*> message) const override;
-    template<typename S = typename ODE::State,
-             typename = std::enable_if_t<is_serializable_v<S>>>
     static not_null<std::unique_ptr<typename Integrator<ODE>::Instance>>
     ReadFromMessage(serialization::IntegratorInstance const& message,
                     ODE const& equation,
                     AppendState const& append_state,
-                    ToleranceToErrorRatio const& tolerance_to_error_ratio);
+                    ToleranceToErrorRatio const& tolerance_to_error_ratio)
+      requires serializable<typename ODE_::State>;
 
    protected:
     Instance(InitialValueProblem<ODE> const& problem,
@@ -218,7 +218,7 @@ class AdaptiveStepSizeIntegrator : public Integrator<ODE_> {
     bool first_use_;
   };
 
-  // The factory function for |Instance|, above.  It ensures that the instance
+  // The factory function for `Instance`, above.  It ensures that the instance
   // has a back-pointer to its integrator.
   virtual not_null<std::unique_ptr<typename Integrator<ODE>::Instance>>
   NewInstance(InitialValueProblem<ODE> const& problem,

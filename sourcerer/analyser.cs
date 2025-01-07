@@ -7,7 +7,7 @@ namespace sourcerer {
 // A class for extracting information from a syntactic tree.  Does not change
 // the tree.
 public class Analyser {
-  // Returns the list of exported (public) declarations in |node| and its
+  // Returns the list of exported (public) declarations in `node` and its
   // descendants.  Note that internal namespace do *not* export their
   // declarations.
   public static List<Declaration> CollectExportedDeclarations(Node node) {
@@ -25,7 +25,7 @@ public class Analyser {
   }
 
 
-  // Given a |using_declaration| and map from (exported) declarations to the
+  // Given a `using_declaration` and map from (exported) declarations to the
   // file where they are declared, returns the file where the name referenced by
   // the using declaration is declared.
   public static File? FindFileReferencedByUsingDeclaration(
@@ -46,8 +46,27 @@ public class Analyser {
     return null;
   }
 
+  // Returns the list of top-level includes in `file`.
+  public static List<Include> FindIncludes(File file) {
+    var includes = new List<Include>();
+    bool after_cpp_if = false;
+    foreach (Node child in file.children) {
+      if (child is PreprocessorDirective cpp) {
+        after_cpp_if = cpp.is_if;
+      } else if (child is Include inc) {
+        includes.Add(inc);
+        // Mark the includes that occur immediately after a preprocessor #if as
+        // conditional.
+        inc.is_conditional = after_cpp_if;
+        after_cpp_if = false;
+      } else {
+        after_cpp_if = false;
+      }
+    }
+    return includes;
+  }
 
-  // Returns the list of innermost namespaces found in |node| and its
+  // Returns the list of innermost namespaces found in `node` and its
   // descendants.
   public static List<Namespace> FindInnermostNamespaces(Node node) {
     var innermost_namespaces = new List<Namespace>();
@@ -64,7 +83,7 @@ public class Analyser {
     return innermost_namespaces;
   }
 
-  // Returns the last outermost namespace found in |file|.
+  // Returns the last outermost namespace found in `file`.
   // TODO(phl): This should probably be changed to return all the outermost
   // namespaces.
   public static Namespace? FindLastOutermostNamespace(File file) {
@@ -77,7 +96,7 @@ public class Analyser {
     return last_outermost_namespace;
   }
 
-  // Returns the legacy internal namespaces found in |node| and it descendants.
+  // Returns the legacy internal namespaces found in `node` and it descendants.
   // A legacy internal namespace is one whose name starts with "internal_".
 
   public static List<Namespace> FindLegacyInternalNamespaces(Node node) {
@@ -94,8 +113,8 @@ public class Analyser {
     return legacy_internal_namespaces;
   }
 
-  // Returns the using declarations found in |node| and its descendants.  If
-  // |internal_only| is true, internal namespaces are ignored (that is, only the
+  // Returns the using declarations found in `node` and its descendants.  If
+  // `internal_only` is true, internal namespaces are ignored (that is, only the
   // exported using declarations are returned).
   public static List<UsingDeclaration> FindUsingDeclarations(
       Node node,
@@ -117,8 +136,8 @@ public class Analyser {
     return internal_using_declarations;
   }
 
-  // Returns the using directives found in |node| and its descendants.  If
-  // |internal_only| is true, internal namespaces are ignored (that is, only the
+  // Returns the using directives found in `node` and its descendants.  If
+  // `internal_only` is true, internal namespaces are ignored (that is, only the
   // exported using directives are returned).
   public static List<UsingDirective> FindUsingDirectives(
       Node node,

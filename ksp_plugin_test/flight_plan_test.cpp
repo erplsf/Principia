@@ -1,7 +1,11 @@
 #include "ksp_plugin/flight_plan.hpp"
 
+#include <chrono>
 #include <limits>
+#include <memory>
+#include <utility>
 #include <vector>
+#include <thread>
 
 #include "astronomy/epoch.hpp"
 #include "base/not_null.hpp"
@@ -12,17 +16,22 @@
 #include "integrators/embedded_explicit_generalized_runge_kutta_nyström_integrator.hpp"
 #include "integrators/embedded_explicit_runge_kutta_nyström_integrator.hpp"
 #include "integrators/methods.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
+#include "ksp_plugin/frames.hpp"
 #include "ksp_plugin/integrators.hpp"
+#include "physics/body_centred_non_rotating_reference_frame.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/massive_body.hpp"
+#include "physics/reference_frame.hpp"
 #include "physics/rotating_body.hpp"
+#include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "serialization/ksp_plugin.pb.h"
-#include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/matchers.hpp"
@@ -38,7 +47,6 @@ using ::testing::Lt;
 using ::testing::MockFunction;
 using namespace principia::astronomy::_epoch;
 using namespace principia::base::_not_null;
-using namespace principia::geometry::_barycentre_calculator;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_space;
 using namespace principia::integrators::_embedded_explicit_generalized_runge_kutta_nyström_integrator;  // NOLINT
@@ -55,17 +63,16 @@ using namespace principia::physics::_discrete_trajectory;
 using namespace principia::physics::_ephemeris;
 using namespace principia::physics::_massive_body;
 using namespace principia::physics::_reference_frame;
-using namespace principia::physics::_rigid_reference_frame;
 using namespace principia::physics::_rotating_body;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
-using namespace principia::testing_utilities::_almost_equals;
 using namespace principia::testing_utilities::_approximate_quantity;
 using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_matchers;
 using namespace principia::testing_utilities::_numerics;
+using namespace std::chrono_literals;
 
 class FlightPlanTest : public testing::Test {
  protected:
@@ -105,7 +112,7 @@ class FlightPlanTest : public testing::Test {
         t0_ - 2 * π * Second,
         {Barycentric::origin + Displacement<Barycentric>(
                                   {1 * Metre, 0 * Metre, 0 * Metre}),
-        Velocity<Barycentric>({0 * Metre / Second,
+         Velocity<Barycentric>({0 * Metre / Second,
                                 1 * Metre / Second,
                                 0 * Metre / Second})}));
     EXPECT_OK(root_.Append(
@@ -398,8 +405,8 @@ TEST_F(FlightPlanTest, SetAdaptiveStepParameter) {
   auto const generalized_adaptive_step_parameters =
       flight_plan_->generalized_adaptive_step_parameters();
 
-  // Reduce |max_steps|.  This causes many segments to become truncated so the
-  // call to |SetAdaptiveStepParameters| returns false and the flight plan is
+  // Reduce `max_steps`.  This causes many segments to become truncated so the
+  // call to `SetAdaptiveStepParameters` returns false and the flight plan is
   // unaffected.
   EXPECT_THAT(flight_plan_->SetAdaptiveStepParameters(
         Ephemeris<Barycentric>::AdaptiveStepParameters(
@@ -426,7 +433,7 @@ TEST_F(FlightPlanTest, SetAdaptiveStepParameter) {
   segment4 = flight_plan_->GetSegment(4);
   EXPECT_EQ(t0_ + 42 * Second, segment4->back().time);
 
-  // Increase |max_steps|.  It works.
+  // Increase `max_steps`.  It works.
   EXPECT_OK(flight_plan_->SetAdaptiveStepParameters(
       Ephemeris<Barycentric>::AdaptiveStepParameters(
           EmbeddedExplicitRungeKuttaNyströmIntegrator<
@@ -558,6 +565,37 @@ TEST_F(FlightPlanTest, Serialization) {
   EXPECT_EQ(t0_ + 42 * Second, flight_plan_read->desired_final_time());
   EXPECT_EQ(2, flight_plan_read->number_of_manœuvres());
   EXPECT_EQ(5, flight_plan_read->number_of_segments());
+
+  // This sleep causes the analyzer to continue running and produce an
+  // anomalistic period of -1.42708553168389347e+01 s.
+  std::this_thread::sleep_for(5s);
+}
+
+TEST_F(FlightPlanTest, Copy) {
+  EXPECT_OK(flight_plan_->SetDesiredFinalTime(t0_ + 42 * Second));
+  EXPECT_OK(flight_plan_->Insert(MakeFirstBurn(), 0));
+  EXPECT_OK(flight_plan_->Insert(MakeSecondBurn(), 1));
+
+  serialization::FlightPlan message1;
+  flight_plan_->WriteToMessage(&message1);
+
+  FlightPlan const flight_plan_copy(*flight_plan_);
+  serialization::FlightPlan message2;
+  flight_plan_copy.WriteToMessage(&message2);
+
+  EXPECT_TRUE(message2.has_initial_mass());
+  EXPECT_TRUE(message2.has_initial_time());
+  EXPECT_TRUE(message2.has_desired_final_time());
+  EXPECT_TRUE(message2.has_adaptive_step_parameters());
+  EXPECT_TRUE(message2.adaptive_step_parameters().has_integrator());
+  EXPECT_TRUE(message2.adaptive_step_parameters().has_max_steps());
+  EXPECT_TRUE(
+      message2.adaptive_step_parameters().has_length_integration_tolerance());
+  EXPECT_TRUE(
+      message2.adaptive_step_parameters().has_speed_integration_tolerance());
+  EXPECT_EQ(2, message2.manoeuvre_size());
+
+  EXPECT_THAT(message2, EqualsProto(message1));
 }
 
 TEST_F(FlightPlanTest, Insertion) {

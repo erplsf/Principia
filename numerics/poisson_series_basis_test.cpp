@@ -9,7 +9,7 @@
 #include "numerics/polynomial_evaluators.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
-#include "quantities/numbers.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 
@@ -37,8 +37,8 @@ class PoissonSeriesBasisTest : public ::testing::Test {
                       serialization::Frame::TEST>;
 
   using V = Vector<double, World>;
-  using Series2 = PoissonSeries<double, 2, 2, HornerEvaluator>;
-  using Series3 = PoissonSeries<V, 3, 3, HornerEvaluator>;
+  using Series2 = PoissonSeries<double, 2, 2>;
+  using Series3 = PoissonSeries<V, 3, 3>;
 
   Instant const t0_;
   Instant const t1_ = t0_ - 2 * Second;

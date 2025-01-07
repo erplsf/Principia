@@ -9,7 +9,7 @@ internal class DifferentialSlider : ScalingRenderer {
 
   public delegate bool ValueParser(string s, out double value);
 
-  // Rates are in units of |value| per real-time second.
+  // Rates are in units of `value` per real-time second.
   public DifferentialSlider(string label,
                             string unit,
                             double log10_lower_rate,
@@ -37,7 +37,7 @@ internal class DifferentialSlider : ScalingRenderer {
       // fractional part.  Remove leading figure spaces so that a sign may be
       // entered after them, see #3480; turn any remaining figure spaces into
       // 0s, in case the user edits a blank leading digit.
-      parser_ = (string s, out double value) => double.TryParse(
+      parser_ = (string s, out double v) => double.TryParse(
           s.Replace(',', '.').Replace('-', '−').Replace("'", "")
            .TrimStart(figure_space)
            .Replace(figure_space, '0'),
@@ -47,7 +47,7 @@ internal class DifferentialSlider : ScalingRenderer {
           NumberStyles.AllowThousands |
           NumberStyles.AllowTrailingWhite,
           Culture.culture.NumberFormat,
-          out value);
+          out v);
     } else {
       parser_ = parser;
     }
@@ -85,13 +85,7 @@ internal class DifferentialSlider : ScalingRenderer {
     }
   }
 
-  // TODO(phl): Remove and use value instead.
-  public void ResetValue(double new_value) {
-    value_ = null;
-    value = new_value;
-  }
-
-  // Renders the |DifferentialSlider|.  Returns true if and only if |value|
+  // Renders the `DifferentialSlider`.  Returns true if and only if `value`
   // changed.
   public bool Render(bool enabled) {
     bool value_changed = false;
@@ -121,7 +115,7 @@ internal class DifferentialSlider : ScalingRenderer {
         bool text_field_has_focus =
             UnityEngine.GUI.GetNameOfFocusedControl() == text_field_name;
 
-        // Use up the vertical arrow keys before the |TextField| does (it
+        // Use up the vertical arrow keys before the `TextField` does (it
         // interprets up as home and down as end).
         bool event_was_arrow_key = false;
         if (text_field_has_focus &&
@@ -242,7 +236,7 @@ internal class DifferentialSlider : ScalingRenderer {
         if (UnityEngine.GUILayout.Button("0", GUILayoutWidth(1))) {
           value_changed = true;
           // Force a change of value so that any input is discarded.
-          ResetValue(zero_value_);
+          value = zero_value_;
         }
         if (slider_position_ != 0.0) {
           value_changed = true;
@@ -277,16 +271,16 @@ internal class DifferentialSlider : ScalingRenderer {
           new UnityEngine.GUIContent(formatted_value_),
           (scroll_adjustment_ ?? arrows_adjustment_.Value).index);
       indicator_position.y -= Width(0.08f);
-      if (scroll_indicator == null) {
+      if (scroll_indicator_ == null) {
         PrincipiaPluginAdapter.LoadTextureOrDie(
-            out scroll_indicator,
+            out scroll_indicator_,
             "digit_scroll_indicator.png");
       }
       UnityEngine.GUI.DrawTexture(
           new UnityEngine.Rect(indicator_position,
                                 new UnityEngine.Vector2(Width(1.28f),
                                                         Width(1.28f))),
-                                scroll_indicator);
+                                scroll_indicator_);
     }
   }
 
@@ -307,9 +301,9 @@ internal class DifferentialSlider : ScalingRenderer {
     return increment;
   }
 
-  // If |formatted_value_[digit_index]| is a decimal place, returns true and
-  // sets |increment| to the value of a unit in that place.  Otherwise, returns
-  // false, setting |increment| to 0.
+  // If `formatted_value_[digit_index]` is a decimal place, returns true and
+  // sets `increment` to the value of a unit in that place.  Otherwise, returns
+  // false, setting `increment` to 0.
   private bool CanIncrementAt(int digit_index, out double increment) {
     increment = 0;
     // Cannot increment an ill-formed value.
@@ -371,25 +365,25 @@ internal class DifferentialSlider : ScalingRenderer {
   // during some events handling.
   private double? value_;
   private string formatted_value_;
-  private UnityEngine.TextAnchor alignment_;
+  private readonly UnityEngine.TextAnchor alignment_;
 
-  // Represents a possible adjustment of the digit at |index| in
-  // |formatted_value_|.  The unit in that place is |increment|.
+  // Represents a possible adjustment of the digit at `index` in
+  // `formatted_value_`.  The unit in that place is `increment`.
   private struct DigitAdjustment {
     public DigitAdjustment(int index, double increment) {
       this.index = index;
       this.increment = increment;
     }
 
-    public double increment;
-    public int index;
+    public readonly double increment;
+    public readonly int index;
   }
 
   // This field is set if a digit is being hovered over.
   private DigitAdjustment? scroll_adjustment_;
   // This field is set if the text edition cursor is before a digit.
   private DigitAdjustment? arrows_adjustment_;
-  private static UnityEngine.Texture scroll_indicator;
+  private static UnityEngine.Texture scroll_indicator_;
 
   private string text_field_name => GetHashCode() + ":text_field";
   private const char figure_space = '\u2007';

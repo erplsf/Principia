@@ -23,7 +23,7 @@ using namespace principia::base::_not_null;
 // names, which is useful for regression testing of the logger.
 #define PRINCIPIA_MATHEMATICA_LOGGER_REGRESSION_TEST 0
 
-// An RAII object to help with Mathematica logging.
+// An RAII object to help with Mathematica logging.  This class is thread-safe.
 class Logger final {
  public:
   // Creates a logger object that will, at destruction, write to the given file.
@@ -38,21 +38,24 @@ class Logger final {
   // resulting file may contain many assignments to the same variable.
   void Flush();
 
-  // Appends an element to the list of values for the List variable |name|.  The
-  // |args...| are passed verbatim to ToMathematica for stringification.  When
+  // Flushes the logger and (atomically) clears its contents.
+  void FlushAndClear();
+
+  // Appends an element to the list of values for the List variable `name`.  The
+  // `args...` are passed verbatim to ToMathematica for stringification.  When
   // this object is destroyed, an assignment is generated for each of the
   // variables named in a call to Append.
   template<typename... Args>
   void Append(std::string const& name, Args... args);
 
-  // Sets an element as the single value for the variable |name|.  The
-  // |args...| are passed verbatim to ToMathematica for stringification.  When
+  // Sets an element as the single value for the variable `name`.  The
+  // `args...` are passed verbatim to ToMathematica for stringification.  When
   // this object is destroyed, an assignment is generated for each of the
   // variables named in a call to Set.
   template<typename... Args>
-  void Set(std::string const& name, Args... args);
+  void Set(std::string const& name, Args const&... args);
 
-  // When a logger is disabled, the calls to |Append| and |Set| have no effect.
+  // When a logger is disabled, the calls to `Append` and `Set` have no effect.
   // Loggers are enabled at construction.
   void Enable();
   void Disable();
@@ -61,9 +64,9 @@ class Logger final {
   // construction of each logger.  This makes it possible for distant code to
   // perform operations on the logger, e.g., to disable it or log client-
   // specific data.  The path passed to the callback is the path passed to the
-  // constructor (i.e., before any alteration performed by |make_unique|).  The
-  // |id| is the uniquely-generated id for the logger (if |make_unique| is true)
-  // or nullopt (if |make_unique| is false).
+  // constructor (i.e., before any alteration performed by `make_unique`).  The
+  // `id` is the uniquely-generated id for the logger (if `make_unique` is true)
+  // or nullopt (if `make_unique` is false).
   using ConstructionCallback =
       std::function<void(std::filesystem::path const&,
                          std::optional<std::uint64_t> id,
@@ -73,7 +76,10 @@ class Logger final {
   static void ClearConstructionCallback();
 
  private:
-  std::atomic_bool enabled_ = true;
+  void FlushLocked();
+
+  absl::Mutex lock_;
+  bool enabled_ = true;
   std::optional<std::uint64_t> my_id_;
   OFStream file_;
   std::map<std::string, std::vector<std::string>> name_and_multiple_values_;

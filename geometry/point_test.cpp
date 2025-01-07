@@ -2,14 +2,17 @@
 
 #include <vector>
 
+#include "astronomy/epoch.hpp"
 #include "astronomy/time_scales.hpp"
+#include "base/cpuid.hpp"
+#include "geometry/barycentre_calculator.hpp"
 #include "geometry/frame.hpp"
-#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
-#include "quantities/quantities.hpp"
+#include "numerics/fma.hpp"
 #include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
 #include "testing_utilities/almost_equals.hpp"
@@ -45,7 +48,7 @@ class PointTest : public testing::Test {
 using PointDeathTest = PointTest;
 
 TEST_F(PointTest, FMA) {
-  if (!CanEmitFMAInstructions || !HasCPUFeatures(CPUFeatureFlags::FMA)) {
+  if (!CanEmitFMAInstructions || !CPUIDFeatureFlag::FMA.IsSet()) {
     GTEST_SKIP() << "Cannot test FMA on a machine without FMA";
   }
   EXPECT_THAT(FusedMultiplyAdd(3 * Litre, 5 * Second / Litre, mjd0),
@@ -87,7 +90,7 @@ TEST_F(PointTest, AssignmentOperators) {
 }
 
 TEST_F(PointTest, Ordering) {
-  // Check that is_quantity_v works for double.
+  // Check that the quantity concept works for double.
   Point<double> zero;
   Point<double> d1 = zero + 1.0;
   Point<double> d2 = zero -3.0;
@@ -157,20 +160,6 @@ TEST_F(PointTest, SerializationSuccess) {
 }
 
 TEST_F(PointDeathTest, BarycentreError) {
-  // The <> seem to confuse EXPECT_DEATH, hence the lambda.
-  auto barycentre =
-      [](std::vector<Instant> const& instants,
-         std::vector<Volume> const& weights) -> Instant {
-    return Barycentre<Instant, Volume, std::vector>(instants, weights);
-  };
-  EXPECT_DEATH({
-    Instant const t1 = mjd0 + 1 * Day;
-    Instant const t2 = mjd0 - 3 * Day;
-    barycentre({t1, t2}, {3 * Litre, 4 * Litre, 5 * Litre});
-  }, "unequal sizes");
-  EXPECT_DEATH({
-    barycentre({}, {});
-  }, "Empty input");
   using InstantBarycentreCalculator = BarycentreCalculator<Instant, Volume>;
   EXPECT_DEATH({
     InstantBarycentreCalculator calculator;
@@ -181,9 +170,8 @@ TEST_F(PointDeathTest, BarycentreError) {
 TEST_F(PointTest, Barycentres) {
   Instant const t1 = mjd0 + 1 * Day;
   Instant const t2 = mjd0 - 3 * Day;
-  Instant const b1 = Barycentre<Instant, Volume>({t1, t2},
-                                                 {3 * Litre, 1 * Litre});
-  Instant const b2 = Barycentre<Instant, double>({t2, t1}, {1, 1});
+  Instant const b1 = Barycentre({t1, t2}, {3 * Litre, 1 * Litre});
+  Instant const b2 = Barycentre({t2, t1});
   EXPECT_THAT(b1, AlmostEquals(mjd0, 1));
   EXPECT_THAT(b2, Eq(mjd0 - 1 * Day));
 }

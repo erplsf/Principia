@@ -1,16 +1,26 @@
 #include "physics/geopotential.hpp"
 
+#include <memory>
 #include <random>
 #include <vector>
 
 #include "astronomy/fortran_astrodynamics_toolkit.hpp"
 #include "astronomy/frames.hpp"
+#include "base/not_null.hpp"
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/space.hpp"
 #include "gtest/gtest.h"
-#include "numerics/legendre.hpp"
+#include "numerics/fixed_arrays.hpp"
+#include "numerics/legendre_normalization_factor.mathematica.h"
+#include "physics/harmonic_damping.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/oblate_body.hpp"
+#include "physics/rotating_body.hpp"
 #include "physics/solar_system.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/parser.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
@@ -34,12 +44,14 @@ using ::testing::ElementsAre;
 using ::testing::Gt;
 using ::testing::Lt;
 using ::testing::Property;
+using namespace principia::astronomy::_fortran_astrodynamics_toolkit;
 using namespace principia::astronomy::_frames;
 using namespace principia::base::_not_null;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_space;
+using namespace principia::numerics::_fixed_arrays;
 using namespace principia::numerics::_legendre_normalization_factor;
 using namespace principia::physics::_geopotential;
 using namespace principia::physics::_harmonic_damping;
@@ -76,8 +88,8 @@ class GeopotentialTest : public ::testing::Test {
                                   right_ascension_of_pole_,
                                   declination_of_pole_) {}
 
-  // Rather confusingly, the quantity called |r| or |displacement| below is
-  // called |-Δq| in ephemeris_body.hpp.
+  // Rather confusingly, the quantity called `r` or `displacement` below is
+  // called `-Δq` in ephemeris_body.hpp.
 
   template<typename Frame>
   static Vector<Quotient<Acceleration, GravitationalParameter>, Frame>
@@ -123,8 +135,8 @@ class GeopotentialTest : public ::testing::Test {
     double const mu =
         earth.gravitational_parameter() / si::Unit<GravitationalParameter>;
     double const rbar = earth.reference_radius() / Metre;
-    numerics::FixedMatrix<double, 10, 10> cnm;
-    numerics::FixedMatrix<double, 10, 10> snm;
+    FixedMatrix<double, 10, 10> cnm;
+    FixedMatrix<double, 10, 10> snm;
     for (int n = 0; n <= 9; ++n) {
       for (int m = 0; m <= n; ++m) {
         cnm(n, m) = earth.cos()(n, m) * LegendreNormalizationFactor(n, m);
@@ -433,7 +445,7 @@ TEST_F(GeopotentialTest, ThresholdComputation) {
   EXPECT_THAT(geopotential.sectoral_damping().inner_threshold(),
               Eq(Infinity<Length>));
 
-  // TODO(egg): This is brittle; we should have |SolarSystem| utilities for
+  // TODO(egg): This is brittle; we should have `SolarSystem` utilities for
   // that.
   double const earth_c20 = earth_message.geopotential().row(0).column(0).cos();
   earth_message.mutable_geopotential()
@@ -573,12 +585,12 @@ TEST_F(GeopotentialTest, DampedForces) {
   // The bodies underlying the geopotentials below.
   std::vector<not_null<std::unique_ptr<OblateBody<ICRS>>>> earths;
 
-  // |geopotential_degree[n]| has the degree n terms of the geopotential, with
+  // `geopotential_degree[n]` has the degree n terms of the geopotential, with
   // tolerance 0.
   std::array<std::optional<Geopotential<ICRS>>, 6> geopotential_degree;
-  // |geopotential_j2| has the degree 2 zonal term term with tolerance 0.
+  // `geopotential_j2` has the degree 2 zonal term term with tolerance 0.
   std::optional<Geopotential<ICRS>> geopotential_j2;
-  // |geopotential_c22_s22| has degree 2 sectoral terms with tolerance 0.
+  // `geopotential_c22_s22` has degree 2 sectoral terms with tolerance 0.
   std::optional<Geopotential<ICRS>> geopotential_c22_s22;
 
   for (int n = 2; n <= 5; ++n) {

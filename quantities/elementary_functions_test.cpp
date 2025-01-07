@@ -1,13 +1,15 @@
+#include "quantities/elementary_functions.hpp"
+
 #include <functional>
 #include <string>
 
-#include "google/protobuf/stubs/common.h"
+#include "base/cpuid.hpp"
 #include "glog/logging.h"
+#include "google/protobuf/stubs/common.h"
 #include "gtest/gtest.h"
+#include "numerics/fma.hpp"
 #include "quantities/astronomy.hpp"
-#include "quantities/bipm.hpp"
 #include "quantities/constants.hpp"
-#include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "quantities/uk.hpp"
@@ -25,6 +27,7 @@ using namespace principia::numerics::_fma;
 using namespace principia::quantities::_astronomy;
 using namespace principia::quantities::_constants;
 using namespace principia::quantities::_elementary_functions;
+using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 using namespace principia::quantities::_uk;
 using namespace principia::testing_utilities::_almost_equals;
@@ -34,7 +37,7 @@ using namespace principia::testing_utilities::_vanishes_before;
 class ElementaryFunctionsTest : public testing::Test {};
 
 TEST_F(ElementaryFunctionsTest, FMA) {
-  if (!CanEmitFMAInstructions || !HasCPUFeatures(CPUFeatureFlags::FMA)) {
+  if (!CanEmitFMAInstructions || !CPUIDFeatureFlag::FMA.IsSet()) {
     GTEST_SKIP() << "Cannot test FMA on a machine without FMA";
   }
   EXPECT_EQ(11 * Coulomb,
@@ -68,7 +71,7 @@ TEST_F(ElementaryFunctionsTest, DimensionlessExponentiation) {
   EXPECT_EQ(negativePower, Pow<-3>(number));
   positivePower *= number;
   negativePower /= number;
-  // This one calls |std::pow|.
+  // This one calls `std::pow`.
   EXPECT_THAT(positivePower, AlmostEquals(Pow<4>(number), 0, 1));
   EXPECT_THAT(negativePower, AlmostEquals(Pow<-4>(number), 0, 1));
 }

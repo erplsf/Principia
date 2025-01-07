@@ -1,4 +1,4 @@
-// The files containing the tree of of child classes of |Integrator| must be
+// The files containing the tree of of child classes of `Integrator` must be
 // included in the order of inheritance to avoid circular dependencies.  This
 // class will end up being reincluded as part of the implementation of its
 //  parent.
@@ -8,13 +8,15 @@
 #ifndef PRINCIPIA_INTEGRATORS_SYMPLECTIC_RUNGE_KUTTA_NYSTRÖM_INTEGRATOR_HPP_
 #define PRINCIPIA_INTEGRATORS_SYMPLECTIC_RUNGE_KUTTA_NYSTRÖM_INTEGRATOR_HPP_
 
+#include <memory>
+
 #include "absl/status/status.h"
 #include "base/not_null.hpp"
 #include "base/traits.hpp"
 #include "geometry/instant.hpp"
-#include "integrators/methods.hpp"
 #include "integrators/ordinary_differential_equations.hpp"
 #include "numerics/fixed_arrays.hpp"
+#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace integrators {
@@ -48,8 +50,8 @@ using namespace principia::quantities::_quantities;
 //   exp(bᵣ₋₁ h B) exp(aᵣ₋₂ h A) ... exp(a₀ h A) exp(b₀ h B).
 // The former is called type ABA, the latter type BAB, following the conventions
 // used in [BCR01b].
-// In the implementation, we call |stages_| the integer r above.  The number of
-// |evaluations| is r-1 in the ABA and BAB cases, and r otherwise.
+// In the implementation, we call `stages_` the integer r above.  The number of
+// `evaluations` is r-1 in the ABA and BAB cases, and r otherwise.
 // See the documentation for an explanation of how types ABA and BAB reduce the
 // number of evaluations required, especially in cases (2) and (3).
 

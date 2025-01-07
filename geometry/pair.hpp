@@ -1,29 +1,36 @@
 #pragma once
 
-#include "base/mappable.hpp"
+#include <string>
+
+#include "base/concepts.hpp"
+#include "base/mappable.hpp"  // 🧙 For base::_mappable::internal.
 #include "base/not_constructible.hpp"
-#include "geometry/barycentre_calculator.hpp"
-#include "geometry/point.hpp"
-#include "geometry/traits.hpp"
+#include "base/not_null.hpp"
+#include "base/traits.hpp"
+#include "geometry/barycentre_calculator.hpp"  // 🧙 For friendship.
+#include "geometry/space.hpp"
+#include "quantities/concepts.hpp"
 #include "quantities/named_quantities.hpp"
 #include "serialization/geometry.pb.h"
 
 namespace principia {
 
 namespace testing_utilities {
-FORWARD_DECLARE_FROM(componentwise,
-                     TEMPLATE(typename PairType) class,
-                     ComponentwiseMatcher2Impl);
+FORWARD_DECLARE(TEMPLATE(typename PairType) class,
+                ComponentwiseMatcher2Impl,
+                FROM(componentwise));
 }  // namespace testing_utilities
 
 namespace geometry {
 namespace _pair {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_not_constructible;
 using namespace principia::base::_not_null;
 using namespace principia::base::_traits;
-using namespace principia::geometry::_traits;
+using namespace principia::geometry::_space;
+using namespace principia::quantities::_concepts;
 using namespace principia::quantities::_named_quantities;
 
 template<typename T1, typename T2>
@@ -49,13 +56,34 @@ struct enable_if_affine;
 template<typename T1, typename T2, typename U>
 struct enable_if_affine<
     Pair<T1, T2>, U,
-    std::enable_if_t<!std::conjunction_v<is_vector<T1>, is_vector<T2>>>>
+    std::enable_if_t<!(additive_group<T1> && additive_group<T2>)>>
     : not_constructible {
   using type = U;
 };
 
 template<typename T>
 using enable_if_affine_t = typename enable_if_affine<T>::type;
+
+template<typename T>
+struct is_position : std::false_type {};
+template<typename Frame>
+struct is_position<Position<Frame>> : std::true_type {};
+template<typename T>
+constexpr bool is_position_v = is_position<T>::value;
+
+template<typename T>
+struct is_displacement : std::false_type {};
+template<typename Frame>
+struct is_displacement<Displacement<Frame>> : std::true_type {};
+template<typename T>
+constexpr bool is_displacement_v = is_displacement<T>::value;
+
+template<typename T>
+struct is_velocity : std::false_type {};
+template<typename Frame>
+struct is_velocity<Velocity<Frame>> : std::true_type {};
+template<typename T>
+constexpr bool is_velocity_v = is_velocity<T>::value;
 
 // A template to enable declarations on vector pairs (i.e., when both of the
 // components are vectors).
@@ -65,7 +93,7 @@ struct enable_if_vector;
 template<typename T1, typename T2, typename U>
 struct enable_if_vector<
     Pair<T1, T2>, U,
-    std::enable_if_t<std::conjunction_v<is_vector<T1>, is_vector<T2>>>>
+    std::enable_if_t<additive_group<T1> && additive_group<T2>>>
     : not_constructible {
   using type = U;
 };
@@ -78,47 +106,52 @@ using enable_if_vector_t = typename enable_if_vector<T, U>::type;
 // Bivector or Trivector).  Only the operations that make sense are defined,
 // depending on the nature of the parameters T1 and T2.
 template<typename T1, typename T2>
-class Pair {
+class Pair final {
  public:
+  Pair()
+    requires std::default_initializable<T1> && std::default_initializable<T2> =
+      default;
   Pair(T1 const& t1, T2 const& t2);
-  virtual ~Pair() = default;
+
+  friend bool operator==(Pair const& left, Pair const& right) = default;
+  friend bool operator!=(Pair const& left, Pair const& right) = default;
 
   Pair operator+(vector_of_t<Pair> const& right) const;
   Pair operator-(vector_of_t<Pair> const& right) const;
 
   Pair& operator+=(vector_of_t<Pair> const& right);
   Pair& operator-=(vector_of_t<Pair> const& right);
+  template<typename U1 = T1, typename U2 = T2>
+  enable_if_vector_t<Pair<U1, U2>>& operator*=(double right);
+  template<typename U1 = T1, typename U2 = T2>
+  enable_if_vector_t<Pair<U1, U2>>& operator/=(double right);
 
-  bool operator==(Pair const& right) const;
-  bool operator!=(Pair const& right) const;
+  T1 const& position() const
+    requires is_position_v<T1>;
+  T1 const& displacement() const
+    requires is_displacement_v<T1>;
+
+  T2 const& velocity() const
+    requires is_velocity_v<T2>;
 
   void WriteToMessage(not_null<serialization::Pair*> message) const;
-  template<typename U1 = T1,
-           typename U2 = T2,
-           typename = std::enable_if_t<is_serializable_v<U1> &&
-                                       is_serializable_v<U2>>>
-  static Pair ReadFromMessage(serialization::Pair const& message);
+  static Pair ReadFromMessage(serialization::Pair const& message)
+    requires serializable<T1> && serializable<T2>;
 
- protected:
-  // The subclasses can access the members directly to implement accessors.
+ private:
   T1 t1_;
   T2 t2_;
 
- private:
   // This is needed so that different instantiations of Pair can access the
   // members.
   template<typename U1, typename U2>
   friend class Pair;
 
-  // This is needed to specialize BarycentreCalculator.
-  template<typename V, typename S>
-  friend class _barycentre_calculator::BarycentreCalculator;
-
   // This is needed to make Pair mappable.
   template<typename Functor, typename T, typename>
   friend struct base::_mappable::internal::Mappable;
 
-  // This is needed for testing.
+  // This is needed to implement matchers for `Pair`.
   template<typename PairType>
   friend class testing_utilities::_componentwise::internal::
       ComponentwiseMatcher2Impl;
@@ -153,12 +186,7 @@ class Pair {
   operator/(Pair<U1, U2> const& left, Scalar right);
 
   template<typename U1, typename U2>
-  friend enable_if_vector_t<Pair<U1, U2>>& operator*=(Pair<U1, U2>& left,
-                                                      double right);
-
-  template<typename U1, typename U2>
-  friend enable_if_vector_t<Pair<U1, U2>>& operator/=(Pair<U1, U2>& left,
-                                                      double right);
+  friend std::string DebugString(Pair<U1, U2> const& pair);
 
   template<typename U1, typename U2>
   friend std::ostream& operator<<(std::ostream& out, Pair<U1, U2> const& pair);
@@ -194,12 +222,6 @@ typename enable_if_vector<
 operator/(Pair<T1, T2> const& left, Scalar right);
 
 template<typename T1, typename T2>
-enable_if_vector_t<Pair<T1, T2>>& operator*=(Pair<T1, T2>& left, double right);
-
-template<typename T1, typename T2>
-enable_if_vector_t<Pair<T1, T2>>& operator/=(Pair<T1, T2>& left, double right);
-
-template<typename T1, typename T2>
 std::ostream& operator<<(std::ostream& out, Pair<T1, T2> const& pair);
 
 }  // namespace internal
@@ -209,38 +231,6 @@ using internal::Pair;
 using internal::vector_of;
 
 }  // namespace _pair
-
-// Specialize BarycentreCalculator to make it applicable to Pairs.
-namespace _barycentre_calculator {
-namespace internal {
-
-using namespace principia::geometry::_pair;
-
-template<typename T1, typename T2, typename Weight>
-class BarycentreCalculator<Pair<T1, T2>, Weight> final {
- public:
-  BarycentreCalculator() = default;
-
-  void Add(Pair<T1, T2> const& pair, Weight const& weight);
-  Pair<T1, T2> Get() const;
-
-  Weight const& weight() const;
-
- private:
-  bool empty_ = true;
-  Product<Difference<T1>, Weight> t1_weighted_sum_;
-  Product<Difference<T2>, Weight> t2_weighted_sum_;
-  Weight weight_;
-
-  // We need reference values to convert points into vectors, if needed.  We
-  // pick default-constructed objects as they don't introduce any inaccuracies
-  // in the computations.
-  static T1 const reference_t1_;
-  static T2 const reference_t2_;
-};
-
-}  // namespace internal
-}  // namespace _barycentre_calculator
 }  // namespace geometry
 
 // Reopen the base namespace to make Pairs of vectors mappable.

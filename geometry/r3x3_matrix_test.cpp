@@ -1,10 +1,12 @@
+#include "geometry/r3x3_matrix.hpp"
+
 #include <utility>
 
-#include "quantities/elementary_functions.hpp"
-#include "geometry/r3x3_matrix.hpp"
+#include "geometry/r3_element.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
@@ -63,9 +65,9 @@ TEST_F(R3x3MatrixTest, QRDecomposition) {
   EXPECT_THAT(
       q,
       AlmostEquals(R3x3Matrix<double>(
-          {6.0 / 7.0, 3.0 / 7.0, 2.0 / 7.0},
-          {-30.0 / Sqrt(3577.0), 34.0 / Sqrt(3577.0), 39.0 / Sqrt(3577.0)},
-          {1.0 / Sqrt(73.0), -6.0 / Sqrt(73.0), 6.0 / Sqrt(73.0)}), 10));
+          {6.0 / 7.0, -30.0 / Sqrt(3577.0),  1.0 / Sqrt(73.0)},
+          {3.0 / 7.0,  34.0 / Sqrt(3577.0), -6.0 / Sqrt(73.0)},
+          {2.0 / 7.0,  39.0 / Sqrt(3577.0), 6.0 / Sqrt(73.0)}), 569));
   EXPECT_THAT(
       r,
       AlmostEquals(R3x3Matrix<Length>(

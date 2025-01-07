@@ -2,8 +2,8 @@
 
 #include <vector>
 
+#include "base/not_null.hpp"
 #include "gtest/gtest.h"
-#include "gmock/gmock.h"
 
 using ::testing::Eq;
 

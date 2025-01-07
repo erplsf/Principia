@@ -1,34 +1,43 @@
 #include "ksp_plugin/manœuvre.hpp"
 
+#include <cmath>
+#include <memory>
+#include <utility>
+
+#include "base/macros.hpp"  // 🧙 For PRINCIPIA_COMPILER_MSVC.
 #include "base/not_null.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/orthogonal_map.hpp"
-#include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "ksp_plugin/frames.hpp"
 #include "physics/continuous_trajectory.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "physics/ephemeris.hpp"
 #include "physics/massive_body.hpp"
-#include "physics/mock_rigid_reference_frame.hpp"
-#include "physics/mock_ephemeris.hpp"
+#include "physics/mock_ephemeris.hpp"  // 🧙 For MockEphemeris.
+#include "physics/mock_rigid_reference_frame.hpp"  // 🧙 For MockRigidReferenceFrame.  // NOLINT
+#include "physics/reference_frame.hpp"
 #include "physics/rigid_motion.hpp"
 #include "physics/rigid_reference_frame.hpp"
 #include "quantities/constants.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
-#include "quantities/numbers.hpp"
 #include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "quantities/uk.hpp"
+#include "serialization/geometry.pb.h"
+#include "serialization/ksp_plugin.pb.h"
+#include "serialization/physics.pb.h"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
-#include "testing_utilities/componentwise.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/make_not_null.hpp"
-#include "testing_utilities/matchers.hpp"
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -46,8 +55,8 @@ using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_orthogonal_map;
-using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::ksp_plugin::_manœuvre;
 using namespace principia::physics::_continuous_trajectory;
@@ -66,7 +75,6 @@ using namespace principia::quantities::_si;
 using namespace principia::quantities::_uk;
 using namespace principia::testing_utilities::_almost_equals;
 using namespace principia::testing_utilities::_approximate_quantity;
-using namespace principia::testing_utilities::_componentwise;
 using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_make_not_null;
 using namespace principia::testing_utilities::_numerics;

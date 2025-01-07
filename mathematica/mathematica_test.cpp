@@ -6,31 +6,38 @@
 
 #include "absl/strings/str_replace.h"
 #include "astronomy/orbital_elements.hpp"
+#include "boost/multiprecision/cpp_bin_float.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/interval.hpp"
-#include "geometry/space.hpp"
 #include "geometry/point.hpp"
 #include "geometry/quaternion.hpp"
 #include "geometry/r3_element.hpp"
 #include "geometry/r3x3_matrix.hpp"
+#include "geometry/space.hpp"
 #include "geometry/symmetric_bilinear_form.hpp"
 #include "gtest/gtest.h"
+#include "numerics/double_precision.hpp"
 #include "numerics/fixed_arrays.hpp"
+#include "numerics/piecewise_poisson_series.hpp"
 #include "numerics/poisson_series.hpp"
-#include "numerics/polynomial.hpp"
 #include "numerics/polynomial_evaluators.hpp"
+#include "numerics/polynomial_in_monomial_basis.hpp"
+#include "numerics/polynomial_in_чебышёв_basis.hpp"
 #include "numerics/unbounded_arrays.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 
 namespace principia {
 namespace mathematica {
 
+using namespace boost::multiprecision;
 using namespace principia::astronomy::_orbital_elements;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
@@ -47,8 +54,9 @@ using namespace principia::numerics::_double_precision;
 using namespace principia::numerics::_fixed_arrays;
 using namespace principia::numerics::_piecewise_poisson_series;
 using namespace principia::numerics::_poisson_series;
-using namespace principia::numerics::_polynomial;
 using namespace principia::numerics::_polynomial_evaluators;
+using namespace principia::numerics::_polynomial_in_monomial_basis;
+using namespace principia::numerics::_polynomial_in_чебышёв_basis;
 using namespace principia::numerics::_unbounded_arrays;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_discrete_trajectory;
@@ -101,6 +109,9 @@ TEST_F(MathematicaTest, ToMathematica) {
   {
     EXPECT_EQ("Times[16^^13456789ABCDEF,Power[2,Subtract[-163,52]]]",
               ToMathematica(0x1.3'4567'89AB'CDEFp-163));
+    EXPECT_EQ("Times[2^^10011010001010110011110001001101010111100110111101111,"
+              "Power[2,Subtract[-163,52]]]",
+              ToMathematica(0x1.3'4567'89AB'CDEFp-163, std::nullopt, 2));
     EXPECT_EQ("Minus[Times[16^^10000000000000,Power[2,Subtract[-1074,52]]]]",
               ToMathematica(-0x1p-1074));
     EXPECT_EQ("Minus[Times[16^^1FFFFFFFFFFFFF,Power[2,Subtract[1023,52]]]]",
@@ -112,6 +123,27 @@ TEST_F(MathematicaTest, ToMathematica) {
     EXPECT_EQ("Infinity", ToMathematica(Infinity<double>));
     EXPECT_EQ("Minus[Infinity]", ToMathematica(-Infinity<double>));
     EXPECT_EQ("Minus[Indeterminate]", ToMathematica(Sqrt(-1)));
+  }
+  {
+    EXPECT_EQ("Times[16^^1C7005218FCD2A07288057EE16EDA202D8B6BE36DC4,"
+              "Power[2,Subtract[-542,168]]]",
+              ToMathematica(cpp_bin_float_50("1.23456789e-163")));
+    EXPECT_EQ("Times[2^^1110001110000000001010010000110001111110011010010101000"
+              "0001110010100010000000010101111110111000010110111011011010001000"
+              "00001011011000101101101011111000110110110111000100,"
+              "Power[2,Subtract[-542,168]]]",
+              ToMathematica(
+                  cpp_bin_float_50("1.23456789e-163"), std::nullopt, 2));
+    EXPECT_EQ("Times[16^^1000000000000000000000000000000000000000000,"
+              "Power[2,Subtract[-1024,168]]]",
+              ToMathematica(
+                  cpp_bin_float_50(ldexp(cpp_bin_float_50("1"), -1024))));
+    EXPECT_EQ("0", ToMathematica(cpp_bin_float_50("0.0")));
+    EXPECT_EQ("Minus[0]",
+              ToMathematica(
+                  -cpp_bin_float_50("0.0")));  // Note that "-0.0" parses as 0.
+    EXPECT_EQ("Infinity", ToMathematica(cpp_bin_float_50("inf")));
+    EXPECT_EQ("Minus[Infinity]", ToMathematica(cpp_bin_float_50("-inf")));
   }
   {
     EXPECT_EQ(ToMathematica(std::tuple{2.0, 3.0}),
@@ -225,7 +257,7 @@ TEST_F(MathematicaTest, ToMathematica) {
         ToMathematica(elements, PreserveUnits));
   }
   {
-    PolynomialInMonomialBasis<Length, Time, 2, HornerEvaluator> polynomial1(
+    PolynomialInMonomialBasis<Length, Time, 2> polynomial1(
         {2 * Metre, -3 * Metre / Second, 4 * Metre / Second / Second});
     EXPECT_EQ(
         absl::StrReplaceAll(
@@ -234,7 +266,7 @@ TEST_F(MathematicaTest, ToMathematica) {
              {"β", ToMathematica(-3 * Metre / Second, PreserveUnits)},
              {"γ", ToMathematica(4 * Metre / Second / Second, PreserveUnits)}}),
         ToMathematica(polynomial1, PreserveUnits));
-    PolynomialInMonomialBasis<Length, Instant, 2, HornerEvaluator> polynomial2(
+    PolynomialInMonomialBasis<Length, Instant, 2> polynomial2(
         {5 * Metre, 6 * Metre / Second, -7 * Metre / Second / Second},
         Instant() + 2 * Second);
     EXPECT_EQ(
@@ -252,7 +284,24 @@ TEST_F(MathematicaTest, ToMathematica) {
         ToMathematica(polynomial2, PreserveUnits));
   }
   {
-    using Series = PoissonSeries<double, 0, 0, HornerEvaluator>;
+    PolynomialInЧебышёвBasis<Length, Time, 2> series(
+        {1 * Metre, -3 * Metre, 2 * Metre}, 2 * Second, 4 * Second);
+    EXPECT_EQ(absl::StrReplaceAll(
+                  R"(Function[Plus[
+                            Times[α,ChebyshevT[0,Divide[Subtract[#,δ],ε]]],
+                            Times[β,ChebyshevT[1,Divide[Subtract[#,δ],ε]]],
+                            Times[γ,ChebyshevT[2,Divide[Subtract[#,δ],ε]]]]])",
+                  {{"α", ToMathematica(1 * Metre, PreserveUnits)},
+                   {"β", ToMathematica(-3 * Metre, PreserveUnits)},
+                   {"γ", ToMathematica(2 * Metre, PreserveUnits)},
+                   {"δ", ToMathematica(3 * Second, PreserveUnits)},
+                   {"ε", ToMathematica(1 * Second, PreserveUnits)},
+                   {" ", ""},
+                   {"\n", ""}}),
+              ToMathematica(series, PreserveUnits));
+  }
+  {
+    using Series = PoissonSeries<double, 0, 0>;
     Instant const t0 = Instant() + 3 * Second;
     Series::AperiodicPolynomial secular({1.5}, t0);
     Series::PeriodicPolynomial sin({0.5}, t0);
@@ -274,8 +323,7 @@ TEST_F(MathematicaTest, ToMathematica) {
         ToMathematica(series, PreserveUnits));
   }
   {
-    using PiecewiseSeries =
-        PiecewisePoissonSeries<double, 0, 0, HornerEvaluator>;
+    using PiecewiseSeries = PiecewisePoissonSeries<double, 0, 0>;
     using Series = PiecewiseSeries::Series;
     Instant const t0 = Instant() + 3 * Second;
     Series series(Series::AperiodicPolynomial({1.5}, t0),

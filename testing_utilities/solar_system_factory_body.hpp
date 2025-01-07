@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cctype>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -107,7 +108,7 @@ SolarSystemFactory::MakeAccuracyParameters(Length const& fitting_tolerance,
           /*geopotential_tolerance=*/0.0);
   }
   LOG(FATAL) << "Bad accuracy";
-  base::noreturn();
+  std::abort();
 }
 
 inline not_null<std::unique_ptr<SolarSystem<ICRS>>>
@@ -134,7 +135,7 @@ inline int SolarSystemFactory::parent(int const index) {
   switch (index) {
     case Sun:
       LOG(FATAL) << FUNCTION_SIGNATURE << "The Sun has no parent";
-      base::noreturn();
+      std::abort();
     case Jupiter:
     case Saturn:
     case Neptune:
@@ -178,7 +179,7 @@ inline int SolarSystemFactory::parent(int const index) {
       return Pluto;
     default:
       LOG(FATAL) << FUNCTION_SIGNATURE << "Undefined index";
-      base::noreturn();
+      std::abort();
   }
 }
 
@@ -221,7 +222,7 @@ inline std::string SolarSystemFactory::name(int const index) {
     BODY_NAME(Deimos);
     default:
       LOG(FATAL) << FUNCTION_SIGNATURE << "Undefined index";
-      base::noreturn();
+      std::abort();
   }
 #undef BODY_NAME
 }

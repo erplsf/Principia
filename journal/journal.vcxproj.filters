@@ -35,6 +35,9 @@
     <ClInclude Include="profiles.generated.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="concepts.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="player.cpp">
@@ -56,12 +59,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="player.generated.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\base\version.generated.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\base\cpuid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

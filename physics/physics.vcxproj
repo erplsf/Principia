@@ -4,16 +4,10 @@
     <ProjectGuid>{41332E9A-729C-45C4-BDE1-A567608DADF2}</ProjectGuid>
     <RootNamespace>physics</RootNamespace>
   </PropertyGroup>
+  <Import Project="..\shared\base.vcxitems" Label="Shared" />
+  <Import Project="..\shared\geometry.vcxitems" Label="Shared" />
+  <Import Project="..\shared\numerics.vcxitems" Label="Shared" />
   <Import Project="$(SolutionDir)principia.props" />
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <Import Project="..\third_party_zfp.props" />
-  </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <Import Project="..\third_party_zfp.props" />
-  </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release_LLVM|x64'">
-    <Import Project="..\third_party_zfp.props" />
-  </ImportGroup>
   <ItemGroup>
     <ClInclude Include="apsides.hpp" />
     <ClInclude Include="apsides_body.hpp" />
@@ -40,8 +34,6 @@
     <ClInclude Include="discrete_trajectory_segment_body.hpp" />
     <ClInclude Include="discrete_trajectory_segment_iterator.hpp" />
     <ClInclude Include="discrete_trajectory_segment_iterator_body.hpp" />
-    <ClInclude Include="discrete_trajectory_segment_range.hpp" />
-    <ClInclude Include="discrete_trajectory_segment_range_body.hpp" />
     <ClInclude Include="discrete_trajectory_types.hpp" />
     <ClInclude Include="discrete_trajectory_types_body.hpp" />
     <ClInclude Include="equipotential.hpp" />
@@ -50,12 +42,13 @@
     <ClInclude Include="harmonic_damping_body.hpp" />
     <ClInclude Include="integration_parameters.hpp" />
     <ClInclude Include="integration_parameters_body.hpp" />
+    <ClInclude Include="lagrange_equipotentials.hpp" />
+    <ClInclude Include="lagrange_equipotentials_body.hpp" />
     <ClInclude Include="mechanical_system.hpp" />
     <ClInclude Include="mechanical_system_body.hpp" />
     <ClInclude Include="continuous_trajectory_body.hpp" />
     <ClInclude Include="continuous_trajectory.hpp" />
     <ClInclude Include="degrees_of_freedom.hpp" />
-    <ClInclude Include="degrees_of_freedom_body.hpp" />
     <ClInclude Include="reference_frame.hpp" />
     <ClInclude Include="reference_frame_body.hpp" />
     <ClInclude Include="rigid_reference_frame.hpp" />
@@ -99,13 +92,6 @@
     <ClInclude Include="clientele.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\base\cpuid.cpp" />
-    <ClCompile Include="..\base\flags.cpp" />
-    <ClCompile Include="..\base\zfp_compressor.cpp" />
-    <ClCompile Include="..\geometry\instant.cpp" />
-    <ClCompile Include="..\numerics\cbrt.cpp" />
-    <ClCompile Include="..\numerics\elliptic_functions.cpp" />
-    <ClCompile Include="..\numerics\elliptic_integrals.cpp" />
     <ClCompile Include="analytical_series_test.cpp" />
     <ClCompile Include="apsides_test.cpp" />
     <ClCompile Include="barycentric_rotating_reference_frame_test.cpp" />
@@ -118,11 +104,11 @@
     <ClCompile Include="clientele_test.cpp" />
     <ClCompile Include="discrete_trajectory_iterator_test.cpp" />
     <ClCompile Include="discrete_trajectory_segment_iterator_test.cpp" />
-    <ClCompile Include="discrete_trajectory_segment_range_test.cpp" />
     <ClCompile Include="discrete_trajectory_segment_test.cpp" />
     <ClCompile Include="discrete_trajectory_test.cpp" />
     <ClCompile Include="equipotential_test.cpp" />
     <ClCompile Include="harmonic_damping_test.cpp" />
+    <ClCompile Include="lagrange_equipotentials_test.cpp" />
     <ClCompile Include="mechanical_system_test.cpp" />
     <ClCompile Include="continuous_trajectory_test.cpp" />
     <ClCompile Include="degrees_of_freedom_test.cpp" />

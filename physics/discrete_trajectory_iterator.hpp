@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "absl/container/btree_map.h"
+#include "base/macros.hpp"  // 🧙 For forward declarations.
 #include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory_segment_iterator.hpp"
 #include "physics/discrete_trajectory_types.hpp"
@@ -12,15 +13,15 @@
 namespace principia {
 namespace physics {
 
-FORWARD_DECLARE_FROM(discrete_trajectory_segment,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectorySegment);
+FORWARD_DECLARE(TEMPLATE(typename Frame) class,
+                DiscreteTrajectorySegment,
+                FROM(discrete_trajectory_segment),
+                INTO(discrete_trajectory_iterator));
 
 namespace _discrete_trajectory_iterator {
 namespace internal {
 
 using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_discrete_trajectory_segment;
 using namespace principia::physics::_discrete_trajectory_segment_iterator;
 using namespace principia::physics::_discrete_trajectory_types;
 
@@ -80,8 +81,8 @@ class DiscreteTrajectoryIterator {
   static typename Timeline::const_iterator const& iterator(
       OptionalTimelineConstIterator const& point);
 
-  // |point_| is always an iterator in the timeline of the segment denoted by
-  // |segment_|.  When |segment_| is at the end of its list, |point_| is
+  // `point_` is always an iterator in the timeline of the segment denoted by
+  // `segment_`.  When `segment_` is at the end of its list, `point_` is
   // nullopt.  It is possible to have repeated times in a segment or across
   // segments and the iterator will skip them, so that they will appear as a
   // single point to clients.

@@ -1,7 +1,31 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace principia {
 namespace ksp_plugin_adapter {
+
+static class DisposableIteratorExtensions {
+  public static IEnumerable<Node> Nodes(
+      this DisposableIterator nodes_iterator) {
+    for (;
+         !nodes_iterator.IteratorAtEnd();
+         nodes_iterator.IteratorIncrement()) {
+      yield return nodes_iterator.IteratorGetNode();
+    }
+  }
+
+  public static IEnumerable<TQP> DiscreteTrajectoryPoints(
+      this DisposableIterator apsis_iterator) {
+    for (;
+         !apsis_iterator.IteratorAtEnd();
+         apsis_iterator.IteratorIncrement()) {
+      yield return new TQP {
+          t = apsis_iterator.IteratorGetDiscreteTrajectoryTime(),
+          qp = apsis_iterator.IteratorGetDiscreteTrajectoryQP()
+      };
+    }
+  }
+}
 
 class DisposableIterator : IDisposable {
   public DisposableIterator(IntPtr iterator) {

@@ -2,12 +2,11 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <functional>
 #include <list>
 #include <memory>
 #include <string>
-#include <thread>
+#include <utility>
 #include <vector>
 
 #include "base/array.hpp"
@@ -15,8 +14,13 @@
 #include "base/pull_serializer.hpp"
 #include "base/serialization.hpp"
 #include "gipfeli/gipfeli.h"
+#include "glog/logging.h"
 #include "gmock/gmock.h"
+#include "google/protobuf/message.h"
+#include "gtest/gtest.h"
+#include "serialization/geometry.pb.h"
 #include "serialization/physics.pb.h"
+#include "serialization/quantities.pb.h"
 #include "testing_utilities/matchers.hpp"
 
 namespace principia {
@@ -149,7 +153,7 @@ class PushDeserializerTest : public ::testing::Test {
       }
 
       // Destroying the deserializer waits until deserialization is done.  It is
-      // important that this happens before |storage| is destroyed.
+      // important that this happens before `storage` is destroyed.
       pull_serializer_.reset();
       push_deserializer_.reset();
     }

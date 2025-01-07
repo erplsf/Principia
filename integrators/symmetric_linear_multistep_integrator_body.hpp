@@ -3,21 +3,18 @@
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
 
 #include <algorithm>
-#include <list>
+#include <memory>
 #include <utility>
 #include <vector>
 
-#include "base/jthread.hpp"
 #include "geometry/serialization.hpp"
-#include "integrators/methods.hpp"
-#include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
+#include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"    // 🧙 For _symplectic_runge_kutta_nyström_integrator.  // NOLINT
 
 namespace principia {
 namespace integrators {
 namespace _symmetric_linear_multistep_integrator {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_serialization;
 
 int const startup_step_divisor = 16;
@@ -45,8 +42,8 @@ SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance::Solve(
   if (!starter_.started()) {
     starter_.Solve(t_final);
 
-    // If |t_final| is not large enough, we may not have generated enough
-    // points.  Bail out, we'll continue the next time |Solve| is called.
+    // If `t_final` is not large enough, we may not have generated enough
+    // points.  Bail out, we'll continue the next time `Solve` is called.
     if (!starter_.started()) {
       return absl::OkStatus();
     }
@@ -134,19 +131,18 @@ SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance::Solve(
       positions[d] = current_position.value;
       current_state.positions[d] = current_position;
     }
-    termination_condition::UpdateWithAbort(
+    status.Update(
         equation.compute_acceleration(t.value,
                                       positions,
-                                      current_step.accelerations),
-        status);
+                                      current_step.accelerations));
     starter_.Push(std::move(current_step));
 
     ComputeVelocityUsingCohenHubbardOesterwinter();
 
     // Inform the caller of the new state.
-    RETURN_IF_STOPPED;
     current_state.time = t;
     append_state(current_state);
+    RETURN_IF_STOPPED;  // After the state has been updated.
     if (absl::IsAborted(status)) {
       return status;
     }
@@ -185,7 +181,6 @@ Instance::WriteToMessage(
 }
 
 template<typename Method, typename ODE_>
-template<typename, typename>
 not_null<std::unique_ptr<
     typename SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance>>
 SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance::ReadFromMessage(
@@ -193,7 +188,8 @@ SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance::ReadFromMessage(
     InitialValueProblem<ODE> const& problem,
     AppendState const& append_state,
     Time const& step,
-    SymmetricLinearMultistepIntegrator const& integrator) {
+    SymmetricLinearMultistepIntegrator const& integrator)
+  requires serializable<typename ODE_::DependentVariable> {
   auto instance = std::unique_ptr<Instance>(new Instance(problem,
                                                          append_state,
                                                          step,
@@ -222,12 +218,12 @@ WriteToMessage(
 }
 
 template<typename Method, typename ODE_>
-template<typename, typename>
 typename SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance::Step
 SymmetricLinearMultistepIntegrator<Method, ODE_>::Instance::Step::
 ReadFromMessage(
     serialization::SymmetricLinearMultistepIntegratorInstance::Step const&
-        message) {
+        message)
+  requires serializable<typename ODE_::DependentVariable> {
   using AccelerationSerializer = QuantityOrMultivectorSerializer<
       typename ODE::DependentVariableDerivative2,
       serialization::SymmetricLinearMultistepIntegratorInstance::Step::
@@ -340,7 +336,7 @@ SymmetricLinearMultistepIntegrator<Method, ODE_>::NewInstance(
     InitialValueProblem<ODE> const& problem,
     AppendState const& append_state,
     Time const& step) const {
-  // Cannot use |make_not_null_unique| because the constructor of |Instance| is
+  // Cannot use `make_not_null_unique` because the constructor of `Instance` is
   // private.
   return std::unique_ptr<Instance>(
       new Instance(problem, append_state, step, *this));

@@ -12,12 +12,12 @@
 #include "geometry/space_transformations.hpp"
 #include "glog/logging.h"
 #include "journal/method.hpp"
-#include "journal/profiles.hpp"
+#include "journal/profiles.hpp"  // 🧙 For generated profiles.
 #include "ksp_plugin/frames.hpp"
 #include "ksp_plugin/iterators.hpp"
+#include "ksp_plugin/planetarium.hpp"
 #include "ksp_plugin/renderer.hpp"
 #include "physics/discrete_trajectory.hpp"
-#include "physics/rigid_motion.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 
@@ -31,6 +31,7 @@ using namespace principia::geometry::_perspective;
 using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_rp2_point;
 using namespace principia::geometry::_space_transformations;
+using namespace principia::journal::_method;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::ksp_plugin::_iterators;
 using namespace principia::ksp_plugin::_planetarium;
@@ -120,7 +121,7 @@ void __cdecl principia__PlanetariumDelete(
   return m.Return();
 }
 
-// Fills the array of size |vertices_size| at |vertices| with vertices for the
+// Fills the array of size `vertices_size` at `vertices` with vertices for the
 // rendering of the segment with the given index in the flight plan of the
 // vessel with the given GUID.
 void __cdecl principia__PlanetariumPlotFlightPlanSegment(
@@ -128,11 +129,12 @@ void __cdecl principia__PlanetariumPlotFlightPlanSegment(
     Plugin const* const plugin,
     char const* const vessel_guid,
     int const index,
+    double const* const t_max,
     ScaledSpacePoint* const vertices,
     int const vertices_size,
     int* const vertex_count) {
   journal::Method<journal::PlanetariumPlotFlightPlanSegment> m(
-      {planetarium, plugin, vessel_guid, index, vertices, vertices_size},
+      {planetarium, plugin, vessel_guid, index, t_max, vertices, vertices_size},
       {vertex_count});
   CHECK_NOTNULL(plugin);
   CHECK_NOTNULL(planetarium);
@@ -149,8 +151,11 @@ void __cdecl principia__PlanetariumPlotFlightPlanSegment(
       segment->empty() ||
       segment->front().time >= plugin->renderer().GetPlottingFrame()->t_min()) {
     planetarium->PlotMethod3(
-        *segment, segment->begin(), segment->end(),
+        *segment,
+        segment->begin(),
+        segment->end(),
         plugin->CurrentTime(),
+        t_max == nullptr ? InfiniteFuture : FromGameTime(*plugin, *t_max),
         /*reverse=*/false,
         [vertices, vertex_count](ScaledSpacePoint const& vertex) {
           vertices[(*vertex_count)++] = vertex;
@@ -160,17 +165,18 @@ void __cdecl principia__PlanetariumPlotFlightPlanSegment(
   return m.Return();
 }
 
-// Fills the array of size |vertices_size| at |vertices| with vertices for the
+// Fills the array of size `vertices_size` at `vertices` with vertices for the
 // rendered prediction of the vessel with the given GUID.
 void __cdecl principia__PlanetariumPlotPrediction(
     Planetarium const* const planetarium,
     Plugin const* const plugin,
     char const* const vessel_guid,
+    double const* const t_max,
     ScaledSpacePoint* const vertices,
     int const vertices_size,
     int* const vertex_count) {
   journal::Method<journal::PlanetariumPlotPrediction> m(
-      {planetarium, plugin, vessel_guid, vertices, vertices_size},
+      {planetarium, plugin, vessel_guid, t_max, vertices, vertices_size},
       {vertex_count});
   CHECK_NOTNULL(plugin);
   CHECK_NOTNULL(planetarium);
@@ -178,8 +184,11 @@ void __cdecl principia__PlanetariumPlotPrediction(
 
   auto const prediction = plugin->GetVessel(vessel_guid)->prediction();
   planetarium->PlotMethod3(
-      *prediction, prediction->begin(), prediction->end(),
+      *prediction,
+      prediction->begin(),
+      prediction->end(),
       plugin->CurrentTime(),
+      t_max == nullptr ? InfiniteFuture : FromGameTime(*plugin, *t_max),
       /*reverse=*/false,
       [vertices, vertex_count](ScaledSpacePoint const& vertex) {
         vertices[(*vertex_count)++] = vertex;
@@ -188,15 +197,16 @@ void __cdecl principia__PlanetariumPlotPrediction(
   return m.Return();
 }
 
-// Fills the array of size |vertices_size| at |vertices| with vertices for the
+// Fills the array of size `vertices_size` at `vertices` with vertices for the
 // rendered past trajectory of the vessel with the given GUID; the
-// trajectory goes back |max_history_length| seconds before the present time (or
-// to the earliest time available if the relevant |t_min| is more recent).
+// trajectory goes back `max_history_length` seconds before the present time (or
+// to the earliest time available if the relevant `t_min` is more recent).
 void __cdecl principia__PlanetariumPlotPsychohistory(
     Planetarium const* const planetarium,
     Plugin const* const plugin,
     char const* const vessel_guid,
     double const max_history_length,
+    double const* const t_max,
     ScaledSpacePoint* const vertices,
     int const vertices_size,
     int* const vertex_count) {
@@ -205,6 +215,7 @@ void __cdecl principia__PlanetariumPlotPsychohistory(
        plugin,
        vessel_guid,
        max_history_length,
+       t_max,
        vertices,
        vertices_size},
       {vertex_count});
@@ -224,7 +235,7 @@ void __cdecl principia__PlanetariumPlotPsychohistory(
     Instant const desired_first_time =
         plugin->CurrentTime() - max_history_length * Second;
 
-    // Since we would want to plot starting from |desired_first_time|, ask the
+    // Since we would want to plot starting from `desired_first_time`, ask the
     // reanimator to reconstruct the past.  That may take a while, during which
     // time the history will be shorter than desired.
     vessel->RequestReanimation(desired_first_time);
@@ -234,6 +245,7 @@ void __cdecl principia__PlanetariumPlotPsychohistory(
         trajectory.lower_bound(desired_first_time),
         psychohistory->end(),
         /*now=*/plugin->CurrentTime(),
+        t_max == nullptr ? InfiniteFuture : FromGameTime(*plugin, *t_max),
         /*reverse=*/true,
         [vertices, vertex_count](ScaledSpacePoint const& vertex) {
           vertices[(*vertex_count)++] = vertex;
@@ -243,10 +255,10 @@ void __cdecl principia__PlanetariumPlotPsychohistory(
   }
 }
 
-// Fills the array of size |vertices_size| at |vertices| with vertices for the
+// Fills the array of size `vertices_size` at `vertices` with vertices for the
 // rendered past trajectory of the celestial with the given index; the
-// trajectory goes back |max_history_length| seconds before the present time (or
-// to the earliest time available if the relevant |t_min| is more recent).
+// trajectory goes back `max_history_length` seconds before the present time (or
+// to the earliest time available if the relevant `t_min` is more recent).
 void __cdecl principia__PlanetariumPlotCelestialPastTrajectory(
     Planetarium const* const planetarium,
     Plugin const* const plugin,
@@ -278,7 +290,7 @@ void __cdecl principia__PlanetariumPlotCelestialPastTrajectory(
     Instant const desired_first_time =
         plugin->CurrentTime() - max_history_length * Second;
 
-    // Since we would want to plot starting from |desired_first_time|, ask the
+    // Since we would want to plot starting from `desired_first_time`, ask the
     // reanimator to reconstruct the past.  That may take a while, during which
     // time the history will be shorter than desired.
     plugin->RequestReanimation(desired_first_time);
@@ -302,7 +314,7 @@ void __cdecl principia__PlanetariumPlotCelestialPastTrajectory(
   }
 }
 
-// Fills the array of size |vertices_size| at |vertices| with vertices for the
+// Fills the array of size `vertices_size` at `vertices` with vertices for the
 // rendered future trajectory of the celestial with the given index; the
 // trajectory goes as far as the furthest of the final time of the prediction or
 // that of the flight plan.
@@ -337,7 +349,7 @@ void __cdecl principia__PlanetariumPlotCelestialFutureTrajectory(
     Instant const prediction_final_time = vessel.prediction()->t_max();
     Instant const final_time =
         vessel.has_flight_plan()
-            ? std::max(vessel.flight_plan().actual_final_time(),
+            ? std::max(GetFlightPlan(*plugin, vessel_guid).actual_final_time(),
                        prediction_final_time)
             : prediction_final_time;
     auto const& celestial_trajectory =
@@ -359,6 +371,42 @@ void __cdecl principia__PlanetariumPlotCelestialFutureTrajectory(
     *minimal_distance_from_camera = minimal_distance / Metre;
     return m.Return();
   }
+}
+
+// Fills the array of size `vertices_size` at `vertices` with vertices for the
+// rendered prediction of the vessel with the given GUID.
+void __cdecl principia__PlanetariumPlotEquipotential(
+    Planetarium const* const planetarium,
+    Plugin const* const plugin,
+    int const index,
+    ScaledSpacePoint* const vertices,
+    int const vertices_size,
+    int* const vertex_count) {
+  journal::Method<journal::PlanetariumPlotEquipotential> m(
+      {planetarium, plugin, index, vertices, vertices_size},
+      {vertex_count});
+  CHECK_NOTNULL(plugin);
+  CHECK_NOTNULL(planetarium);
+  *vertex_count = 0;
+
+  auto const& equipotentials =
+      *CHECK_NOTNULL(plugin->geometric_potential_plotter().equipotentials());
+  CHECK_GE(index, 0);
+  CHECK_LT(index, equipotentials.lines.size());
+  DiscreteTrajectory<Navigation> const& equipotential =
+      equipotentials.lines[index];
+
+  planetarium->PlotMethod3(
+      equipotential,
+      equipotential.front().time,
+      equipotential.back().time,
+      plugin->CurrentTime(),
+      /*reverse=*/false,
+      [vertices, vertex_count](ScaledSpacePoint const& vertex) {
+        vertices[(*vertex_count)++] = vertex;
+      },
+      vertices_size);
+  return m.Return();
 }
 
 }  // namespace interface

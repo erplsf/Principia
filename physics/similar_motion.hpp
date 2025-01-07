@@ -7,12 +7,15 @@
 #include "base/traits.hpp"
 #include "geometry/conformal_map.hpp"
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/homothecy.hpp"
-#include "geometry/space_transformations.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "physics/rigid_motion.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "serialization/physics.pb.h"
 
 namespace principia {
@@ -26,17 +29,17 @@ using namespace principia::geometry::_conformal_map;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_homothecy;
-using namespace principia::geometry::_space_transformations;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_rigid_motion;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
-// The instantaneous motion of |ToFrame| with respect to |FromFrame|.  This is
-// the derivative of a |Similarity<FromFrame, ToFrame>|.  In order to invert,
-// the |Similarity| is needed, and we need its linear part anyway, so we store
+// The instantaneous motion of `ToFrame` with respect to `FromFrame`.  This is
+// the derivative of a `Similarity<FromFrame, ToFrame>`.  In order to invert,
+// the `Similarity` is needed, and we need its linear part anyway, so we store
 // it (and we forward its action on positions).
 template<typename FromFrame, typename ToFrame>
 class SimilarMotion final {
@@ -61,12 +64,12 @@ class SimilarMotion final {
       Homothecy<double, FromFrame, ToFrame> const& homothecy,
       Variation<double> dilatation_rate);
 
-  // A similar motion expressing that |FromFrame| and |ToFrame| have the same
+  // A similar motion expressing that `FromFrame` and `ToFrame` have the same
   // axes, origin, and instantaneous motion.
   // This function is enabled only if both frames have the same handedness (this
-  // is a requirement of OrthogonalMap::Identity) and if the |motion| of
-  // FromFrame is a special case of that of |ToFrame| (see the comments on
-  // |FrameMotion|).
+  // is a requirement of OrthogonalMap::Identity) and if the `motion` of
+  // FromFrame is a special case of that of `ToFrame` (see the comments on
+  // `FrameMotion`).
   template<typename F = FromFrame,
            typename T = ToFrame,
            typename = std::enable_if_t<(F::handedness == T::handedness &&

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace geometry {
@@ -16,8 +17,15 @@ struct Interval {
   T min = T{} + Infinity<Difference<T>>;  // NOLINT(whitespace/braces)
   T max = T{} - Infinity<Difference<T>>;  // NOLINT(whitespace/braces)
 
+  friend bool operator==(Interval const& left, Interval const& right) = default;
+  friend bool operator!=(Interval const& left, Interval const& right) = default;
+
   // The Lebesgue measure of this interval.
   Difference<T> measure() const;
+
+  // Returns true iff `measure` would return zero, but more efficiently.
+  bool empty() const;
+
   // The midpoint of this interval; NaN if the interval is empty (min > max).
   T midpoint() const;
 

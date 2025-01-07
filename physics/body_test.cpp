@@ -1,27 +1,34 @@
 #include "physics/body.hpp"
 
+#include <memory>
+
 #include "astronomy/epoch.hpp"
 #include "astronomy/frames.hpp"
 #include "astronomy/time_scales.hpp"
+#include "base/not_null.hpp"
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/r3_element.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/methods.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
-#include "numerics/legendre.hpp"
+#include "numerics/legendre_normalization_factor.mathematica.h"
 #include "numerics/root_finders.hpp"
+#include "physics/ephemeris.hpp"
 #include "physics/massive_body.hpp"
 #include "physics/massless_body.hpp"
 #include "physics/oblate_body.hpp"
 #include "physics/rotating_body.hpp"
 #include "physics/solar_system.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
-#include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 
 namespace principia {
 namespace physics {
@@ -50,7 +57,6 @@ using namespace principia::physics::_solar_system;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
-using namespace principia::testing_utilities::_almost_equals;
 using namespace principia::testing_utilities::_approximate_quantity;
 using namespace principia::testing_utilities::_is_near;
 
@@ -141,8 +147,8 @@ TEST_F(BodyTest, MasslessSerializationSuccess) {
   // No members to test in this class, we just check that it doesn't crash.
   massless_body_ = *MasslessBody::ReadFromMessage(message);
 
-  // Dispatching from |Body|.  Need two steps to add const and remove
-  // |not_null|.
+  // Dispatching from `Body`.  Need two steps to add const and remove
+  // `not_null`.
   not_null<std::unique_ptr<Body const>> body = Body::ReadFromMessage(message);
   cast_massless_body = dynamic_cast_not_null<MasslessBody const*>(body.get());
   EXPECT_THAT(cast_massless_body, NotNull());
@@ -165,7 +171,7 @@ TEST_F(BodyTest, MassiveSerializationSuccess) {
   EXPECT_EQ(massive_body_.gravitational_parameter(),
             massive_body.gravitational_parameter());
 
-  // Dispatching from |Body|.
+  // Dispatching from `Body`.
   not_null<std::unique_ptr<Body>> body = Body::ReadFromMessage(message);
   cast_massive_body = dynamic_cast_not_null<MassiveBody*>(body.get());
   EXPECT_THAT(cast_massive_body, NotNull());
@@ -201,7 +207,7 @@ TEST_F(BodyTest, RotatingSerializationSuccess) {
             Angle::ReadFromMessage(
                 rotating_body_extension.declination_of_pole()));
 
-  // Dispatching from |MassiveBody|.
+  // Dispatching from `MassiveBody`.
   not_null<std::unique_ptr<MassiveBody const>> const massive_body =
       MassiveBody::ReadFromMessage(message);
   EXPECT_EQ(rotating_body_.gravitational_parameter(),
@@ -216,7 +222,7 @@ TEST_F(BodyTest, RotatingSerializationSuccess) {
   EXPECT_EQ(rotating_body_.AngleAt(Instant()),
             cast_rotating_body->AngleAt(Instant()));
 
-  // Dispatching from |Body|.
+  // Dispatching from `Body`.
   not_null<std::unique_ptr<Body const>> const body =
       Body::ReadFromMessage(message);
   cast_rotating_body =
@@ -251,7 +257,7 @@ TEST_F(BodyTest, OblateSerializationSuccess) {
             oblate_body_extension.geopotential().row(2).column(0).cos() *
                 LegendreNormalizationFactor(2, 0));
 
-  // Dispatching from |MassiveBody|.
+  // Dispatching from `MassiveBody`.
   not_null<std::unique_ptr<MassiveBody const>> const massive_body =
       MassiveBody::ReadFromMessage(message);
   EXPECT_EQ(oblate_body_.gravitational_parameter(),
@@ -264,7 +270,7 @@ TEST_F(BodyTest, OblateSerializationSuccess) {
   EXPECT_EQ(oblate_body_.j2(), cast_oblate_body->j2());
   EXPECT_EQ(oblate_body_.polar_axis(), cast_oblate_body->polar_axis());
 
-  // Dispatching from |Body|.
+  // Dispatching from `Body`.
   not_null<std::unique_ptr<Body const>> const body =
       Body::ReadFromMessage(message);
   cast_oblate_body =

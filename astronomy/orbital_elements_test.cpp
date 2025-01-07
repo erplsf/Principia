@@ -1,29 +1,39 @@
 #include "astronomy/orbital_elements.hpp"
 
-#include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "astronomy/epoch.hpp"
 #include "astronomy/frames.hpp"
+#include "astronomy/time_scales.hpp"
 #include "base/not_null.hpp"
 #include "geometry/instant.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/methods.hpp"
+#include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "mathematica/logger.hpp"
+#include "mathematica/mathematica.hpp"
 #include "physics/body_centred_non_rotating_reference_frame.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/kepler_orbit.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/massless_body.hpp"
 #include "physics/solar_system.hpp"
-#include "testing_utilities/almost_equals.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics_matchers.hpp"
 
 namespace principia {
 namespace astronomy {
 
+using ::testing::AnyOf;
 using ::testing::Lt;
 using namespace principia::astronomy::_epoch;
 using namespace principia::astronomy::_frames;
@@ -42,27 +52,20 @@ using namespace principia::physics::_ephemeris;
 using namespace principia::physics::_kepler_orbit;
 using namespace principia::physics::_massive_body;
 using namespace principia::physics::_massless_body;
-using namespace principia::physics::_oblate_body;
-using namespace principia::physics::_rotating_body;
 using namespace principia::physics::_solar_system;
-using namespace principia::quantities::_astronomy;
-using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
-using namespace principia::testing_utilities::_almost_equals;
 using namespace principia::testing_utilities::_approximate_quantity;
 using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_matchers;
-using namespace principia::testing_utilities::_numerics;
 using namespace principia::testing_utilities::_numerics_matchers;
 
 class OrbitalElementsTest : public ::testing::Test {
  protected:
   OrbitalElementsTest() {}
 
-  // Completes |initial_osculating_elements| and returns a GCRS trajectory
-  // obtained by flowing the corresponding initial conditions in |ephemeris|.
+  // Completes `initial_osculating_elements` and returns a GCRS trajectory
+  // obtained by flowing the corresponding initial conditions in `ephemeris`.
   static not_null<std::unique_ptr<DiscreteTrajectory<GCRS>>>
   EarthCentredTrajectory(
       KeplerianElements<GCRS>& initial_osculating_elements,
@@ -376,9 +379,11 @@ TEST_F(OrbitalElementsTest, RealPerturbation) {
   EXPECT_THAT(elements.nodal_precession(), IsNear(2.0_(1) * Degree / Day));
 
   // Mean element values.
-  EXPECT_THAT(elements.mean_semimajor_axis_interval().midpoint(),
-              AbsoluteErrorFrom(*initial_osculating.semimajor_axis,
-                                IsNear(104_(1) * Metre)));
+  EXPECT_THAT(
+      elements.mean_semimajor_axis_interval().midpoint(),
+      AbsoluteErrorFrom(*initial_osculating.semimajor_axis,
+                        AnyOf(IsNear(104_(1) * Metre),     // Windows.
+                              IsNear(105_(1) * Metre))));  // Ubuntu, macOS.
   EXPECT_THAT(elements.mean_eccentricity_interval().midpoint(),
               IsNear(0.0014_(1)));
   EXPECT_THAT(elements.mean_inclination_interval().midpoint(),

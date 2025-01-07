@@ -1,5 +1,6 @@
 #include "numerics/fma.hpp"
 
+#include "base/cpuid.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -15,8 +16,8 @@ using namespace principia::testing_utilities::_almost_equals;
 class FMATest : public testing::Test {
  protected:
   void SetUp() override {
-    // Note that we test even if |UseHardwareFMA| is false, i.e., even in debug.
-    if (!CanEmitFMAInstructions || !HasCPUFeatures(CPUFeatureFlags::FMA)) {
+    // Note that we test even if `UseHardwareFMA` is false, i.e., even in debug.
+    if (!CanEmitFMAInstructions || !CPUIDFeatureFlag::FMA.IsSet()) {
       GTEST_SKIP() << "Cannot test FMA on a machine without FMA";
     }
   }

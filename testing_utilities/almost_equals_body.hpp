@@ -10,8 +10,6 @@
 #include <limits>
 #include <string>
 
-#include "geometry/grassmann.hpp"
-#include "geometry/r3_element.hpp"
 #include "gmock/gmock.h"
 #include "numerics/ulp_distance.hpp"
 #include "testing_utilities/numerics.hpp"
@@ -21,9 +19,7 @@ namespace testing_utilities {
 namespace _almost_equals {
 namespace internal {
 
-using namespace principia::numerics::_fixed_arrays;
 using namespace principia::numerics::_ulp_distance;
-using namespace principia::numerics::_unbounded_arrays;
 using namespace principia::testing_utilities::_numerics;
 
 // Make sure that this matcher treats all NaNs as almost equal to 0 ULPs.
@@ -170,7 +166,7 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
   int max_j = -1;
   for (int i = 0; i < 3; ++i) {
     for (int j = 0; j < 3; ++j) {
-      int const distance = NormalizedNaNULPDistance(
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;
@@ -301,7 +297,37 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
 }
 
 template<typename T>
-template<typename Scalar, int size>
+template<typename S>
+bool AlmostEqualsMatcher<T>::MatchAndExplain(
+    DoublePrecision<S> const& actual,
+    testing::MatchResultListener* listener) const {
+  // Check that the types are equality-comparable up to implicit casts.
+  if (actual == expected_) {
+    return MatchAndExplainIdentical(listener);
+  }
+  std::int64_t const value_distance =
+      NormalizedNaNULPDistance(DoubleValue(actual.value),
+                               DoubleValue(expected_.value));
+  if (value_distance != 0) {
+    *listener << "the values differ by the following number of ULPs: "
+              << value_distance;
+    return false;
+  }
+  std::int64_t const error_distance =
+      NormalizedNaNULPDistance(DoubleValue(actual.error),
+                               DoubleValue(expected_.error));
+  bool const matches =
+      min_ulps_ <= error_distance && error_distance <= max_ulps_;
+  if (!matches) {
+    *listener << "the error is not within " << min_ulps_ << " to " << max_ulps_
+              << " ULPs: it differs by the following numbers of ULPs: "
+              << error_distance;
+  }
+  return matches;
+}
+
+template<typename T>
+template<typename Scalar, std::int64_t size>
 bool AlmostEqualsMatcher<T>::MatchAndExplain(
     FixedVector<Scalar, size> const& actual,
     testing::MatchResultListener* listener) const {
@@ -310,10 +336,10 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return MatchAndExplainIdentical(listener);
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  for (int i = 0; i < expected_.size(); ++i) {
-    int const distance = NormalizedNaNULPDistance(DoubleValue(actual[i]),
-                                                  DoubleValue(expected_[i]));
+  std::int64_t max_i = -1;
+  for (std::int64_t i = 0; i < expected_.size(); ++i) {
+    std::int64_t const distance = NormalizedNaNULPDistance(
+        DoubleValue(actual[i]), DoubleValue(expected_[i]));
     if (distance > max_distance) {
       max_distance = distance;
       max_i = i;
@@ -329,7 +355,7 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
 }
 
 template<typename T>
-template<typename Scalar, int rows, int columns>
+template<typename Scalar, std::int64_t rows, std::int64_t columns>
 bool AlmostEqualsMatcher<T>::MatchAndExplain(
     FixedMatrix<Scalar, rows, columns> const& actual,
     testing::MatchResultListener* listener) const {
@@ -338,11 +364,11 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return MatchAndExplainIdentical(listener);
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  int max_j = -1;
-  for (int i = 0; i < expected_.rows(); ++i) {
-    for (int j = 0; j < expected_.columns(); ++j) {
-      int const distance = NormalizedNaNULPDistance(
+  std::int64_t max_i = -1;
+  std::int64_t max_j = -1;
+  for (std::int64_t i = 0; i < expected_.rows(); ++i) {
+    for (std::int64_t j = 0; j < expected_.columns(); ++j) {
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;
@@ -361,7 +387,7 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
 }
 
 template<typename T>
-template<typename Scalar, int rows>
+template<typename Scalar, std::int64_t rows>
 bool AlmostEqualsMatcher<T>::MatchAndExplain(
     FixedLowerTriangularMatrix<Scalar, rows> const& actual,
     testing::MatchResultListener* listener) const {
@@ -370,11 +396,11 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return MatchAndExplainIdentical(listener);
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  int max_j = -1;
-  for (int i = 0; i < expected_.rows(); ++i) {
-    for (int j = 0; j <= i; ++j) {
-      int const distance = NormalizedNaNULPDistance(
+  std::int64_t max_i = -1;
+  std::int64_t max_j = -1;
+  for (std::int64_t i = 0; i < expected_.rows(); ++i) {
+    for (std::int64_t j = 0; j <= i; ++j) {
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;
@@ -393,7 +419,7 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
 }
 
 template<typename T>
-template<typename Scalar, int columns>
+template<typename Scalar, std::int64_t columns>
 bool AlmostEqualsMatcher<T>::MatchAndExplain(
     FixedUpperTriangularMatrix<Scalar, columns> const& actual,
     testing::MatchResultListener* listener) const {
@@ -402,11 +428,11 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return MatchAndExplainIdentical(listener);
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  int max_j = -1;
-  for (int i = 0; i < expected_.columns(); ++i) {
-    for (int j = i; j < expected_.columns(); ++j) {
-      int const distance = NormalizedNaNULPDistance(
+  std::int64_t max_i = -1;
+  std::int64_t max_j = -1;
+  for (std::int64_t i = 0; i < expected_.columns(); ++i) {
+    for (std::int64_t j = i; j < expected_.columns(); ++j) {
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;
@@ -438,10 +464,10 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return false;
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  for (int i = 0; i < expected_.size(); ++i) {
-    int const distance = NormalizedNaNULPDistance(DoubleValue(actual[i]),
-                                                  DoubleValue(expected_[i]));
+  std::int64_t max_i = -1;
+  for (std::int64_t i = 0; i < expected_.size(); ++i) {
+    std::int64_t const distance = NormalizedNaNULPDistance(
+        DoubleValue(actual[i]), DoubleValue(expected_[i]));
     if (distance > max_distance) {
       max_distance = distance;
       max_i = i;
@@ -470,11 +496,11 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return false;
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  int max_j = -1;
-  for (int i = 0; i < expected_.rows(); ++i) {
-    for (int j = 0; j < expected_.columns(); ++j) {
-      int const distance = NormalizedNaNULPDistance(
+  std::int64_t max_i = -1;
+  std::int64_t max_j = -1;
+  for (std::int64_t i = 0; i < expected_.rows(); ++i) {
+    for (std::int64_t j = 0; j < expected_.columns(); ++j) {
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;
@@ -506,11 +532,11 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return false;
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  int max_j = -1;
-  for (int i = 0; i < expected_.rows(); ++i) {
-    for (int j = 0; j <= i; ++j) {
-      int const distance = NormalizedNaNULPDistance(
+  std::int64_t max_i = -1;
+  std::int64_t max_j = -1;
+  for (std::int64_t i = 0; i < expected_.rows(); ++i) {
+    for (std::int64_t j = 0; j <= i; ++j) {
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;
@@ -543,11 +569,11 @@ bool AlmostEqualsMatcher<T>::MatchAndExplain(
     return false;
   }
   std::int64_t max_distance = -1;
-  int max_i = -1;
-  int max_j = -1;
-  for (int i = 0; i < expected_.columns(); ++i) {
-    for (int j = i; j < expected_.columns(); ++j) {
-      int const distance = NormalizedNaNULPDistance(
+  std::int64_t max_i = -1;
+  std::int64_t max_j = -1;
+  for (std::int64_t i = 0; i < expected_.columns(); ++i) {
+    for (std::int64_t j = i; j < expected_.columns(); ++j) {
+      std::int64_t const distance = NormalizedNaNULPDistance(
           DoubleValue(actual(i, j)), DoubleValue(expected_(i, j)));
       if (distance > max_distance) {
         max_distance = distance;

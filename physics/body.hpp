@@ -1,7 +1,8 @@
 #ifndef PRINCIPIA_PHYSICS_BODY_HPP_
 #define PRINCIPIA_PHYSICS_BODY_HPP_
 
-#include "base/macros.hpp"
+#include <memory>
+
 #include "base/not_constructible.hpp"
 #include "base/not_null.hpp"
 #include "serialization/physics.pb.h"
@@ -42,8 +43,8 @@ class Body {
 
  private:
   // A helper struct which is here just so that we can specialize it on
-  // |is_inertial|.  This is necessary because we cannot dynamic cast to
-  // OblateBody<Frame> if |Frame| is not inertial.
+  // `is_inertial`.  This is necessary because we cannot dynamic cast to
+  // OblateBody<Frame> if `Frame` is not inertial.
   template<typename Frame, bool is_inertial>
   struct CompatibilityHelper : not_constructible {
      static bool is_compatible_with(not_null<Body const*> body);

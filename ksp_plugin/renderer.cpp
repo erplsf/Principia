@@ -1,10 +1,14 @@
 #include "ksp_plugin/renderer.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
+#include "base/ranges.hpp"
 #include "geometry/grassmann.hpp"
-#include "physics/apsides.hpp"
+#include "geometry/permutation.hpp"
 #include "physics/body_centred_body_direction_reference_frame.hpp"
 #include "physics/degrees_of_freedom.hpp"
 
@@ -13,7 +17,6 @@ namespace ksp_plugin {
 namespace _renderer {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::base::_ranges;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_permutation;
@@ -130,15 +133,15 @@ Renderer::RenderPlottingTrajectoryInWorld(
   // that we are considering an observer fixed in the plotting frame.
   // - Instead of applying the full rigid motion and consistently transforming
   // the velocities, or even just applying the orthogonal map, it simply
-  // identifies the axes of |World| with those of the plotting frame. This is
+  // identifies the axes of `World` with those of the plotting frame. This is
   // because we are interested in the magnitude of the velocity (the speed) in
   // the plotting frame, as well as the coordinates (in frames with a physically
   // significant plane, the z coordinate becomes the out-of-plane velocity).
   // We apply the scaling at the time of the velocity, instead of the scaling at
-  // |time| or no scaling, because we want speeds in current metres per second,
-  // not in constant metres (at |time|) per second, nor in constant lunar
+  // `time` or no scaling, because we want speeds in current metres per second,
+  // not in constant metres (at `time`) per second, nor in constant lunar
   // distances (masquerading as metres) per second.
-  // The resulting |DegreesOfFreedom| should be seen as no more than a
+  // The resulting `DegreesOfFreedom` should be seen as no more than a
   // convenient hack to send a plottable position together with a velocity in
   // the coordinates we want.  In fact, it needs an articial permutation to
   // avoid a violation of handedness.
@@ -166,6 +169,39 @@ Renderer::RenderPlottingTrajectoryInWorld(
     trajectory.Append(t, world_degrees_of_freedom).IgnoreError();
   }
   return trajectory;
+}
+
+std::vector<Renderer::Node>
+Renderer::RenderNodes(
+    Instant const& time,
+    DiscreteTrajectory<Navigation>::iterator const& begin,
+    DiscreteTrajectory<Navigation>::iterator const& end,
+    Position<World> const& sun_world_position,
+    Rotation<Barycentric, AliceSun> const& planetarium_rotation) const {
+  std::vector<Node> nodes;
+  Similarity<Navigation, World> const
+      from_plotting_frame_to_world_at_current_time =
+          PlottingToWorld(time, sun_world_position, planetarium_rotation);
+  for (auto const& [t, degrees_of_freedom] : Range(begin, end)) {
+    DegreesOfFreedom<Navigation> const& navigation_degrees_of_freedom =
+        degrees_of_freedom;
+    ConformalMap<double, Navigation, World> const
+        from_plotting_frame_to_world_at_t =
+            PlottingToWorld(t, planetarium_rotation);
+    nodes.push_back(
+        {.time = t,
+         .position = from_plotting_frame_to_world_at_current_time(
+             navigation_degrees_of_freedom.position()),
+         .apparent_inclination =
+             AngleBetween(Bivector<double, Navigation>({0, 0, 1}),
+                          Wedge(navigation_degrees_of_freedom.position() -
+                                    Navigation::origin,
+                                navigation_degrees_of_freedom.velocity())),
+         .out_of_plane_velocity =
+             from_plotting_frame_to_world_at_t.scale() *
+             navigation_degrees_of_freedom.velocity().coordinates().z});
+  }
+  return nodes;
 }
 
 SimilarMotion<Barycentric, Navigation> Renderer::BarycentricToPlotting(
@@ -302,7 +338,7 @@ Rotation<CameraCompensatedReference, World> Renderer::CameraReferenceRotation(
 void Renderer::WriteToMessage(
     not_null<serialization::Renderer*> message) const {
   plotting_frame_->WriteToMessage(message->mutable_plotting_frame());
-  // No serialization of the |target_|.
+  // No serialization of the `target_`.
 }
 
 not_null<std::unique_ptr<Renderer>> Renderer::ReadFromMessage(

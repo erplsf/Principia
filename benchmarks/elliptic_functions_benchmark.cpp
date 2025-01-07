@@ -1,11 +1,10 @@
-// .\Release\x64\benchmarks.exe --benchmark_repetitions=10 --benchmark_min_time=2 --benchmark_filter=Jacobi  // NOLINT(whitespace/line_length)
+// .\Release\x64\benchmarks.exe --benchmark_repetitions=10 --benchmark_filter=Jacobi  // NOLINT(whitespace/line_length)
 
 #include <random>
 #include <vector>
 
 #include "benchmark/benchmark.h"
 #include "numerics/elliptic_functions.hpp"
-#include "quantities/numbers.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 

@@ -5,7 +5,6 @@
 #include <cmath>
 #include <string>
 
-#include "base/macros.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -60,14 +59,6 @@ inline constexpr Sign Sign::operator-() const {
 
 inline constexpr Sign::operator int() const {
   return *this * 1;
-}
-
-constexpr bool Sign::operator==(Sign const other) const {
-  return negative_ == other.negative_;
-}
-
-constexpr bool Sign::operator!=(Sign const other) const {
-  return negative_ != other.negative_;
 }
 
 inline void Sign::WriteToMessage(

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
@@ -36,10 +37,8 @@ using namespace principia::numerics::_poisson_series_basis;
 using namespace principia::numerics::_root_finders;
 using namespace principia::numerics::_unbounded_arrays;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
 
-// Appends basis elements for |ω| to |basis| and |basis_subspaces|.  Returns the
+// Appends basis elements for `ω` to `basis` and `basis_subspaces`.  Returns the
 // number of elements that were appended.
 template<int aperiodic_degree, int periodic_degree,
          typename BasisSeries>
@@ -70,18 +69,17 @@ int MakeBasis(std::optional<AngularFrequency> const& ω,
   }
 }
 
-// Given a column |aₘ| of a matrix (or quasimatrix in our case, see [Tre10])
-// this function produces the columns |qₘ|, |rₘ| of its QR decomposition.  The
-// inner product is defined by |weight|, |t_min| and |t_max|.  |q| is the Q
-// quasimatrix constructed so far, and |subspaces| specify the subspaces spanned
-// by the |q|s and by |aₘ|.
+// Given a column `aₘ` of a matrix (or quasimatrix in our case, see [Tre10])
+// this function produces the columns `qₘ`, `rₘ` of its QR decomposition.  The
+// inner product is defined by `weight`, `t_min` and `t_max`.  `q` is the Q
+// quasimatrix constructed so far, and `subspaces` specify the subspaces spanned
+// by the `q`s and by `aₘ`.
 template<typename BasisSeries,
-         int aperiodic_wdegree, int periodic_wdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_wdegree, int periodic_wdegree>
 absl::Status NormalGramSchmidtStep(
     BasisSeries const& aₘ,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree, Evaluator> const& weight,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
     Instant const& t_min,
     Instant const& t_max,
     std::vector<PoissonSeriesSubspace> const& subspaces,
@@ -151,19 +149,18 @@ absl::Status NormalGramSchmidtStep(
 }
 
 // This function performs the augmented QR decomposition step described in
-// [Hig02] section 20.3.  Note that as an optimization in updates |b|, because
-// the computation of |z| for larger and larger R would perform the exact same
-// inner products for the range [0, m_begin[.  The range of |q| to process (and
-// the range of |z| to update is at indices [m_begin, m_end[.  This function
-// doesn't return |qₘ₊₁| because it's not needed for the solution.  It also
-// doesn't return |ρ|.
+// [Hig02] section 20.3.  Note that as an optimization in updates `b`, because
+// the computation of `z` for larger and larger R would perform the exact same
+// inner products for the range [0, m_begin[.  The range of `q` to process (and
+// the range of `z` to update is at indices [m_begin, m_end[.  This function
+// doesn't return `qₘ₊₁` because it's not needed for the solution.  It also
+// doesn't return `ρ`.
 template<typename Function, typename BasisSeries, typename Norm,
-         int aperiodic_wdegree, int periodic_wdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_wdegree, int periodic_wdegree>
 absl::Status AugmentedGramSchmidtStep(
     Function& b,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree, Evaluator> const& weight,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
     Instant const& t_min,
     Instant const& t_max,
     std::vector<BasisSeries> const& q,
@@ -183,7 +180,7 @@ absl::Status AugmentedGramSchmidtStep(
     b -= z[k] * q[k];
   }
 
-  // We do not compute the norm of |b| here (named |ρ| in [Hig02] section 20.3)
+  // We do not compute the norm of `b` here (named `ρ` in [Hig02] section 20.3)
   // because it's an additional cost: the client can compute the norm of the
   // residual however they want anyway.
 
@@ -191,14 +188,12 @@ absl::Status AugmentedGramSchmidtStep(
 }
 
 template<typename Function,
-         int aperiodic_wdegree, int periodic_wdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_wdegree, int periodic_wdegree>
 AngularFrequency PreciseMode(
     Interval<AngularFrequency> const& fft_mode,
     Function const& function,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree,
-                  Evaluator> const& weight) {
+                  aperiodic_wdegree, periodic_wdegree> const& weight) {
   auto const weighted_function = weight * function;
   auto const weighted_function_spectrum = weighted_function.FourierTransform();
 
@@ -215,16 +210,13 @@ AngularFrequency PreciseMode(
 
 template<int aperiodic_degree, int periodic_degree,
          typename Function,
-         int aperiodic_wdegree, int periodic_wdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_wdegree, int periodic_wdegree>
 PoissonSeries<std::invoke_result_t<Function, Instant>,
-              aperiodic_degree, periodic_degree,
-              Evaluator>
+              aperiodic_degree, periodic_degree>
 Projection(Function const& function,
            AngularFrequency const& ω,
            PoissonSeries<double,
-                         aperiodic_wdegree, periodic_wdegree,
-                         Evaluator> const& weight,
+                         aperiodic_wdegree, periodic_wdegree> const& weight,
            Instant const& t_min,
            Instant const& t_max) {
   std::optional<AngularFrequency> optional_ω = ω;
@@ -246,36 +238,32 @@ Projection(Function const& function,
 template<int aperiodic_degree, int periodic_degree,
          typename Function,
          typename AngularFrequencyCalculator,
-         int aperiodic_wdegree, int periodic_wdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_wdegree, int periodic_wdegree>
 PoissonSeries<std::invoke_result_t<Function, Instant>,
-              aperiodic_degree, periodic_degree,
-              Evaluator>
-IncrementalProjection(Function const& function,
-                      AngularFrequencyCalculator const& calculator,
-                      PoissonSeries<double,
-                                    aperiodic_wdegree, periodic_wdegree,
-                                    Evaluator> const& weight,
-                      Instant const& t_min,
-                      Instant const& t_max) {
+              aperiodic_degree, periodic_degree>
+IncrementalProjection(
+    Function const& function,
+    AngularFrequencyCalculator const& calculator,
+    PoissonSeries<double,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
+    Instant const& t_min,
+    Instant const& t_max) {
   using Value = std::invoke_result_t<Function, Instant>;
   using Norm = typename Hilbert<Value>::NormType;
   using Normalized = typename Hilbert<Value>::NormalizedType;
   using BasisSeries = PoissonSeries<Normalized,
-                                    aperiodic_degree, periodic_degree,
-                                    Evaluator>;
+                                    aperiodic_degree, periodic_degree>;
   using ResultSeries = PoissonSeries<Value,
-                                     aperiodic_degree, periodic_degree,
-                                     Evaluator>;
+                                     aperiodic_degree, periodic_degree>;
 
   Instant const& t0 = weight.origin();
   auto const basis_zero = static_cast<
       typename BasisSeries::AperiodicPolynomial>(
-      typename PoissonSeries<Normalized, 0, 0, Evaluator>::AperiodicPolynomial(
+      typename PoissonSeries<Normalized, 0, 0>::AperiodicPolynomial(
           {Normalized{}}, t0));
   auto const result_zero =
       static_cast<typename ResultSeries::AperiodicPolynomial>(
-          typename PoissonSeries<Value, 0, 0, Evaluator>::AperiodicPolynomial(
+          typename PoissonSeries<Value, 0, 0>::AperiodicPolynomial(
               {Value{}}, t0));
 
   std::optional<AngularFrequency> ω = calculator(function);

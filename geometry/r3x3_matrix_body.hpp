@@ -6,18 +6,14 @@
 #include <string>
 #include <utility>
 
-#include "base/macros.hpp"
 #include "glog/logging.h"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace geometry {
 namespace _r3x3_matrix {
 namespace internal {
 
-using namespace principia::base::_tags;
-using namespace principia::geometry::_r3_element;
 using namespace principia::quantities::_elementary_functions;
 
 template<typename Scalar>
@@ -28,6 +24,63 @@ R3x3Matrix<Scalar>::R3x3Matrix(R3Element<Scalar> const& row_x,
                                R3Element<Scalar> const& row_y,
                                R3Element<Scalar> const& row_z)
     : rows_({row_x, row_y, row_z}) {}
+
+template<typename Scalar>
+FORCE_INLINE(inline) Scalar R3x3Matrix<Scalar>::operator()(
+    int const r, int const c) const {
+  switch (r) {
+    case 0:
+    case 1:
+    case 2:
+      return rows_[r][c];
+    default:
+      DLOG(FATAL) << FUNCTION_SIGNATURE
+                  << " indices = {" << r << ", " << c << "}";
+      std::abort();
+  }
+}
+
+template<typename Scalar>
+Scalar& R3x3Matrix<Scalar>::operator()(int r, int c) {
+  switch (r) {
+    case 0:
+    case 1:
+    case 2:
+      return rows_[r][c];
+    default:
+      DLOG(FATAL) << FUNCTION_SIGNATURE
+                  << " indices = {" << r << ", " << c << "}";
+      std::abort();
+  }
+}
+
+template<typename Scalar>
+R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator+=(
+    R3x3Matrix const& right) {
+  return *this = *this + right;
+}
+
+template<typename Scalar>
+R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator-=(
+    R3x3Matrix const& right) {
+  return *this = *this - right;
+}
+
+template<typename Scalar>
+R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator*=(
+    R3x3Matrix const& right) {
+  return *this = *this * right;
+}
+
+template<typename Scalar>
+R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator*=(double const right) {
+  return *this = *this * right;
+}
+
+template<typename Scalar>
+R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator/=(double const right) {
+  return *this = *this / right;
+}
 
 template<typename Scalar>
 R3x3Matrix<Scalar> R3x3Matrix<Scalar>::DiagonalMatrix(
@@ -102,63 +155,6 @@ R3Element<Scalar> const& R3x3Matrix<Scalar>::row_y() const {
 template<typename Scalar>
 R3Element<Scalar> const& R3x3Matrix<Scalar>::row_z() const {
   return rows_[Z];
-}
-
-template<typename Scalar>
-FORCE_INLINE(inline) Scalar R3x3Matrix<Scalar>::operator()(
-    int const r, int const c) const {
-  switch (r) {
-    case 0:
-    case 1:
-    case 2:
-      return rows_[r][c];
-    default:
-      DLOG(FATAL) << FUNCTION_SIGNATURE
-                  << " indices = {" << r << ", " << c << "}";
-      base::noreturn();
-  }
-}
-
-template<typename Scalar>
-Scalar& R3x3Matrix<Scalar>::operator()(int r, int c) {
-  switch (r) {
-    case 0:
-    case 1:
-    case 2:
-      return rows_[r][c];
-    default:
-      DLOG(FATAL) << FUNCTION_SIGNATURE
-                  << " indices = {" << r << ", " << c << "}";
-      base::noreturn();
-  }
-}
-
-template<typename Scalar>
-R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator+=(
-    R3x3Matrix const& right) {
-  return *this = *this + right;
-}
-
-template<typename Scalar>
-R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator-=(
-    R3x3Matrix const& right) {
-  return *this = *this - right;
-}
-
-template<typename Scalar>
-R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator*=(
-    R3x3Matrix const& right) {
-  return *this = *this * right;
-}
-
-template<typename Scalar>
-R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator*=(double const right) {
-  return *this = *this * right;
-}
-
-template<typename Scalar>
-R3x3Matrix<Scalar>& R3x3Matrix<Scalar>::operator/=(double const right) {
-  return *this = *this / right;
 }
 
 template<typename Scalar>
@@ -345,7 +341,8 @@ R3Element<Product<LScalar, RScalar>> operator*(
 }
 
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3x3Matrix<Product<LScalar, RScalar>> operator*(
     LScalar const& left,
     R3x3Matrix<RScalar> const& right) {
@@ -357,7 +354,8 @@ R3x3Matrix<Product<LScalar, RScalar>> operator*(
                                                left * right.rows_[Z]);
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3x3Matrix<Product<LScalar, RScalar>> operator*(
     R3x3Matrix<LScalar> const& left,
     RScalar const& right) {
@@ -369,7 +367,8 @@ R3x3Matrix<Product<LScalar, RScalar>> operator*(
                                                left.rows_[Z] * right);
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3x3Matrix<Quotient<LScalar, RScalar>> operator/(
     R3x3Matrix<LScalar> const& left,
     RScalar const& right) {
@@ -388,18 +387,6 @@ R3x3Matrix<Product<LScalar, RScalar>> KroneckerProduct(
   return R3x3Matrix<Product<LScalar, RScalar>>(left.x * right,
                                                left.y * right,
                                                left.z * right);
-}
-
-template<typename Scalar>
-bool operator==(R3x3Matrix<Scalar> const& left,
-                R3x3Matrix<Scalar> const& right) {
-  return left.rows_ == right.rows_;
-}
-
-template<typename Scalar>
-bool operator!=(R3x3Matrix<Scalar> const& left,
-                R3x3Matrix<Scalar> const& right) {
-  return left.rows_ != right.rows_;
 }
 
 template<typename Scalar>

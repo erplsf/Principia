@@ -34,6 +34,7 @@
     <PrincipiaTestProject Condition="$(ProjectName) == ksp_plugin or
                                      $(ProjectName) == serialization or
                                      $(ProjectName) == benchmarks or
+                                     $(ProjectName) == nanobenchmarks or
                                      $(ProjectName) == tools">false</PrincipiaTestProject>
     <!--Dependency paths.-->
     <PrincipiaDependencyConfiguration>Debug</PrincipiaDependencyConfiguration>
@@ -71,10 +72,11 @@
     <ClCompile>
       <CallingConvention>vectorcall</CallingConvention>
       <AdditionalIncludeDirectories>C:\Program Files;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /bigobj /w14714 /Zc:char8_t-</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /bigobj /w14714 /Zc:char8_t- /Zf</AdditionalOptions>
       <AdditionalOptions Condition="$(ProjectName) != serialization">/w14061 %(AdditionalOptions)</AdditionalOptions>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <LanguageStandard Condition="$(ProjectName) != xxx">stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
       <WarningLevel Condition="!$(PrincipiaCompilerClangLLVM)">Level3</WarningLevel>
       <WarningLevel Condition="$(PrincipiaCompilerClangLLVM) and
                                $(ProjectName) == serialization">TurnOffAllWarnings</WarningLevel>
@@ -83,25 +85,43 @@
       <AdditionalOptions Condition="$(PrincipiaCompilerClangLLVM)">
         <!-- \-\-version-->
         <!-- \-v-->
+        -fbracket-depth=257
+        -ferror-limit=1000
         -Werror=typename-missing
         -Werror=microsoft-template
         -Werror=unknown-argument
         -Wno-c++98-compat-pedantic
         -Wno-c++98-compat
         -Wno-c99-compat
-        -Wno-undef
+        -Wno-exit-time-destructors
         -Wno-float-equal
+        -Wno-format-nonliteral
+        -Wno-global-constructors
+        -Wno-gnu-anonymous-struct
+        -Wno-gnu-zero-variadic-macro-arguments
+        -Wno-implicit-int-float-conversion
+        -Wno-macro-redefined
+        -Wno-mathematical-notation-identifier-extension
+        -Wno-nested-anon-types
+        -Wno-reserved-macro-identifier
         -Wno-shadow-field-in-constructor
+        -Wno-shadow-uncaptured-local
+        -Wno-sign-compare
         -Wno-sign-conversion
-        -Wno-covered-switch-default
+        -Wno-undef
+        -Wno-unknown-pragmas
+        -Wno-unsafe-buffer-usage
+        -Xclang -fno-char8_t
         <!--Warnings in protobuf generated code are none of our business.-->
         -Xclang --system-header-prefix=serialization/
         <!--Same for warnings in dependencies.-->
+        -Xclang --system-header-prefix=absl/
         -Xclang --system-header-prefix=benchmark/
         -Xclang --system-header-prefix=google/
         -Xclang --system-header-prefix=glog/
         -Xclang --system-header-prefix=gtest/
         -Xclang --system-header-prefix=gmock/
+        -Xclang --system-header-prefix=zfp/
       </AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions Condition="!$(PrincipiaCompilerClangLLVM)">
@@ -157,6 +177,10 @@
   <Import Project="$(SolutionDir)..\Google\abseil-cpp\msvc\portability_macros.props" />
   <Import Project="$(SolutionDir)google_abseil-cpp.props" />
   <Import Project="$(SolutionDir)generate_version_translation_unit.props" />
+  <Import Project="$(SolutionDir)inria_core-math.props" />
+  <Import Project="$(SolutionDir)llnl_zfp.props" />
+  <Import Project="$(SolutionDir)boost_config.props" />
+  <Import Project="$(SolutionDir)boost_multiprecision.props" />
 
   <ImportGroup Condition="$(ProjectName) == benchmarks or
                           $(ProjectName) == ksp_plugin_test or

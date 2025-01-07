@@ -1,17 +1,33 @@
 #include "physics/rotating_pulsating_reference_frame.hpp"
 
 #include <memory>
-#include <utility>
 
-#include "astronomy/orbital_elements.hpp"
+#include "astronomy/epoch.hpp"
+#include "astronomy/frames.hpp"
+#include "base/not_null.hpp"
+#include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
+#include "geometry/instant.hpp"
+#include "geometry/space.hpp"
 #include "gtest/gtest.h"
-#include "gmock/gmock.h"
+#include "integrators/explicit_runge_kutta_integrator.hpp"
+#include "integrators/methods.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
+#include "integrators/symmetric_linear_multistep_integrator.hpp"
+#include "physics/discrete_trajectory.hpp"
+#include "physics/ephemeris.hpp"
+#include "physics/kepler_orbit.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/massless_body.hpp"
 #include "physics/solar_system.hpp"
-#include "testing_utilities/solar_system_factory.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
+#include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/componentwise.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics_matchers.hpp"
+#include "testing_utilities/solar_system_factory.hpp"
 
 namespace principia {
 namespace physics {
@@ -20,7 +36,6 @@ using ::testing::Eq;
 using namespace principia::astronomy::_epoch;
 using namespace principia::astronomy::_frames;
 using namespace principia::base::_not_null;
-using namespace principia::geometry::_barycentre_calculator;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
@@ -36,11 +51,10 @@ using namespace principia::physics::_massive_body;
 using namespace principia::physics::_massless_body;
 using namespace principia::physics::_rotating_pulsating_reference_frame;
 using namespace principia::physics::_solar_system;
-using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
-using namespace principia::testing_utilities::_componentwise;
 using namespace principia::testing_utilities::_approximate_quantity;
+using namespace principia::testing_utilities::_componentwise;
 using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_numerics_matchers;
 using namespace principia::testing_utilities::_solar_system_factory;
@@ -153,16 +167,15 @@ TEST_F(RotatingPulsatingReferenceFrameTest, GeometricAcceleration) {
 
   EXPECT_THAT(icrs_trajectory.back().time, Eq(t_final));
   EXPECT_THAT(earth_moon_trajectory.back().time, Eq(t_final));
-  // TODO(egg): These errors make no sense.
   EXPECT_THAT(
       earth_moon_.FromThisFrameAtTimeSimilarly(t_final)(
           earth_moon_trajectory.back().degrees_of_freedom),
       Componentwise(AbsoluteErrorFrom(
                         icrs_trajectory.back().degrees_of_freedom.position(),
-                        IsNear(2'110.9_(1) * Metre)),
+                        IsNear(167.2_(1) * Milli(Metre))),
                     AbsoluteErrorFrom(
                         icrs_trajectory.back().degrees_of_freedom.velocity(),
-                        IsNear(265.9_(1) * Milli(Metre) / Second))));
+                        IsNear(18.34_(1) * Micro(Metre) / Second))));
 }
 
 #endif

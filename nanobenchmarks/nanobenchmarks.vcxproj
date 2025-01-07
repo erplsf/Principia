@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{1c6654c0-14e2-4a9e-b0e6-508b84fa8a0e}</ProjectGuid>
+    <RootNamespace>nanobenchmarks</RootNamespace>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)principia.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>powrprof.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="function_registry.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="performance_settings_controller.cpp" />
+    <ClCompile Include="examples.cpp" />
+    <ClCompile Include="microarchitectures.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="reference_functions.asm" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="function_registry.hpp" />
+    <ClInclude Include="performance_settings_controller.hpp" />
+    <ClInclude Include="microarchitectures.hpp" />
+  </ItemGroup>
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+    <Import Project="..\shared\base.vcxitems" Label="Shared" />
+    <Import Project="..\shared\numerics.vcxitems" Label="Shared" />
+  </ImportGroup>
+</Project>

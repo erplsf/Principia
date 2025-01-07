@@ -1,4 +1,4 @@
-// The files containing the tree of child classes of |ReferenceFrame| must be
+// The files containing the tree of child classes of `ReferenceFrame` must be
 // included in the order of inheritance to avoid circular dependencies.  This
 // class will end up being reincluded as part of the implementation of its
 // parent.
@@ -8,7 +8,22 @@
 #ifndef PRINCIPIA_PHYSICS_ROTATING_PULSATING_REFERENCE_FRAME_HPP_
 #define PRINCIPIA_PHYSICS_ROTATING_PULSATING_REFERENCE_FRAME_HPP_
 
-#include "physics/reference_frame.hpp"
+#include <memory>
+#include <vector>
+
+#include "base/not_null.hpp"
+#include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
+#include "geometry/instant.hpp"
+#include "geometry/space.hpp"
+#include "physics/barycentric_rotating_reference_frame.hpp"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/ephemeris.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/similar_motion.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/tuples.hpp"
 
 #include "physics/body_centred_body_direction_reference_frame.hpp"
 
@@ -18,9 +33,9 @@ namespace _rotating_pulsating_reference_frame {
 namespace internal {
 
 using namespace principia::base::_not_null;
+using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
-using namespace principia::geometry::_frame;
 using namespace principia::geometry::_space;
 using namespace principia::physics::_barycentric_rotating_reference_frame;
 using namespace principia::physics::_degrees_of_freedom;
@@ -44,8 +59,13 @@ class RotatingPulsatingReferenceFrame
       not_null<MassiveBody const*> primary,
       not_null<MassiveBody const*> secondary);
 
-  not_null<MassiveBody const*> primary() const;
-  not_null<MassiveBody const*> secondary() const;
+  RotatingPulsatingReferenceFrame(
+      not_null<Ephemeris<InertialFrame> const*> ephemeris,
+      std::vector<not_null<MassiveBody const*>> primaries,
+      std::vector<not_null<MassiveBody const*>> secondaries);
+
+  std::vector<not_null<MassiveBody const*>> const& primaries() const;
+  std::vector<not_null<MassiveBody const*>> const& secondaries() const;
 
   Instant t_min() const override;
   Instant t_max() const override;
@@ -85,8 +105,8 @@ class RotatingPulsatingReferenceFrame
       Derivatives<Length, Instant, 2> const& r_derivatives_1) const;
 
   not_null<Ephemeris<InertialFrame> const*> const ephemeris_;
-  not_null<MassiveBody const*> const primary_;
-  not_null<MassiveBody const*> const secondary_;
+  std::vector<not_null<MassiveBody const*>> const primaries_;
+  std::vector<not_null<MassiveBody const*>> const secondaries_;
   BarycentricRotatingReferenceFrame<InertialFrame, RotatingFrame> const
       rotating_frame_;
 };

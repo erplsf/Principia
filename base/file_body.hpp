@@ -5,8 +5,9 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <utility>
 
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For PRINCIPIA_COMPILER_MSVC.
 #include "glog/logging.h"
 
 namespace principia {
@@ -17,7 +18,7 @@ namespace internal {
 inline OFStream::OFStream(std::filesystem::path const& path) {
 #if PRINCIPIA_COMPILER_MSVC
   CHECK(path.has_filename()) << path;
-  // Don't use |remove_filename| here as it leaves a trailing \.  See
+  // Don't use `remove_filename` here as it leaves a trailing \.  See
   // https://developercommunity.visualstudio.com/content/problem/278829/stdfilesystemcreate-directories-returns-false-if-p.html
   // for a discussion of what happens in that case.
   std::filesystem::path const directory = path.parent_path();
@@ -33,6 +34,10 @@ inline OFStream::OFStream(std::filesystem::path const& path) {
 
 inline OFStream::~OFStream() {
   stream_.close();
+}
+
+inline void OFStream::Flush() {
+  stream_.flush();
 }
 
 inline OFStream& OFStream::operator=(OFStream&& other) {

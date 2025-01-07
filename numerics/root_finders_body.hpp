@@ -11,7 +11,7 @@
 #include "geometry/sign.hpp"
 #include "glog/logging.h"
 #include "numerics/double_precision.hpp"
-#include "numerics/scale_b.hpp"
+#include "quantities/si.hpp"
 
 namespace principia {
 namespace numerics {
@@ -21,8 +21,6 @@ namespace internal {
 using namespace principia::geometry::_barycentre_calculator;
 using namespace principia::geometry::_sign;
 using namespace principia::numerics::_double_precision;
-using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_si;
 
 template<typename Argument, typename Function>
@@ -45,8 +43,7 @@ Argument Bisect(Function f,
   Argument lower = lower_bound;
   Argument upper = upper_bound;
   for (;;) {
-    Argument const middle =
-        Barycentre<Argument, double>({lower, upper}, {1, 1});
+    Argument const middle = Barycentre({lower, upper});
     // The size of the interval has reached one ULP.
     if (middle == lower || middle == upper) {
       return middle;
@@ -72,7 +69,7 @@ Argument Brent(Function f,
   using Value = decltype(f(lower_bound));
   Value const zero{};
 
-  // We do not use |std::numeric_limits<double>::epsilon()|, because it is 2ϵ in
+  // We do not use `std::numeric_limits<double>::epsilon()`, because it is 2ϵ in
   // Brent’s notation: Brent uses ϵ = β^(1-τ) / 2 for rounded arithmetic, see
   // (2.9).
   constexpr double ϵ = ScaleB(0.5, 1 - std::numeric_limits<double>::digits);
@@ -172,12 +169,12 @@ Argument GoldenSectionSearch(Function f,
   Argument lower = lower_bound;
   Value f_lower = f(lower);
 
-  Argument lower_interior = Barycentre<Argument, double>(
-      {lower, upper}, {upper_interior_ratio, lower_interior_ratio});
+  Argument lower_interior =
+      Barycentre({lower, upper}, {upper_interior_ratio, lower_interior_ratio});
   Value f_lower_interior = f(lower_interior);
 
-  Argument upper_interior = Barycentre<Argument, double>(
-      {lower, upper}, {lower_interior_ratio, upper_interior_ratio});
+  Argument upper_interior =
+      Barycentre({lower, upper}, {lower_interior_ratio, upper_interior_ratio});
   Value f_upper_interior = f(upper_interior);
 
   while (lower < lower_interior &&
@@ -208,7 +205,7 @@ Argument GoldenSectionSearch(Function f,
       f_upper_interior = f(upper_interior);
     }
   }
-  return Barycentre<Argument, double>({lower, upper}, {1, 1});
+  return Barycentre({lower, upper});
 }
 
 // The implementation is translated from the ALGOL 60 in [Bre73], chapter 5,
@@ -239,7 +236,7 @@ Argument Brent(Function f,
   {
     auto const& f = minimized_f;
 
-    // We do not use |std::numeric_limits<double>::epsilon()|, because it is 2ϵ
+    // We do not use `std::numeric_limits<double>::epsilon()`, because it is 2ϵ
     // in Brent’s notation: Brent uses ϵ = β^(1-τ) / 2 for rounded arithmetic,
     // see [Bre73], chapter 4, (2.9).
     constexpr double ϵ = ScaleB(0.5, 1 - std::numeric_limits<double>::digits);
@@ -269,7 +266,7 @@ Argument Brent(Function f,
     Difference<Argument> e{};
     f_v = f_w = f_x = f(x);
     for (;;) {
-      Argument const m = Barycentre<Argument, double>({a, b}, {1, 1});
+      Argument const m = Barycentre({a, b});
       Difference<Argument> const tol = eps * Abs(x - Argument{}) + t;
       Difference<Argument> const t2 = 2 * tol;
       // Check stopping criterion.
@@ -346,46 +343,44 @@ Argument Brent(Function f,
 template<typename Argument, typename Value>
 BoundedArray<Argument, 2> SolveQuadraticEquation(
     Argument const& origin,
-    Value const& a0,
-    Derivative<Value, Argument> const& a1,
-    Derivative<Derivative<Value, Argument>, Argument> const& a2) {
+    Value const& a₀,
+    Derivative<Value, Argument> const& a₁,
+    Derivative<Derivative<Value, Argument>, Argument> const& a₂) {
   using Derivative1 = Derivative<Value, Argument>;
   using Discriminant = Square<Derivative1>;
 
-  // This algorithm is after section 1.8 of Accuracy and Stability of Numerical
-  // Algorithms, Second Edition, Higham, ISBN 0-89871-521-0.
+  // This algorithm is after section 1.8 of [Hig02].
 
-  static Discriminant const discriminant_zero{};
+  constexpr Discriminant zero{};
 
   // Use double precision for the discriminant because there can be
-  // cancellations.  Higham mentions that it is necessary "to use extended
-  // precision (or some trick tantamount to the use of extended precision)."
-  DoublePrecision<Discriminant> discriminant = TwoSum(a1 * a1, -4.0 * a0 * a2);
+  // cancellations.  Higham mentions that it is necessary “to use extended
+  // precision (or some trick tantamount to the use of extended precision).”
+  DoublePrecision<Discriminant> discriminant =
+      TwoProduct(a₁, a₁) - TwoProduct(4.0 * a₀, a₂);
 
-  if (discriminant.value == discriminant_zero &&
-      discriminant.error == discriminant_zero) {
+  if (discriminant.value == zero) {
     // One solution.
-    return {origin - 0.5 * a1 / a2};
-  } else if (discriminant.value < discriminant_zero ||
-             (discriminant.value == discriminant_zero &&
-              discriminant.error < discriminant_zero)) {
+    return {origin - 0.5 * a₁ / a₂};
+  } else if (discriminant.value < zero) {
     // No solution.
     return {};
   } else {
-    // Two solutions.  Compute the numerator of the larger one.
+    // Two solutions.  Compute the numerator of the larger one (in absolute
+    // value).
     Derivative1 numerator;
-    static Derivative1 derivative_zero{};
-    if (a1 > derivative_zero) {
-      numerator = -a1 - Sqrt(discriminant.value + discriminant.error);
+    constexpr Derivative1 zero{};
+    if (a₁ > zero) {
+      numerator = -a₁ - Sqrt(discriminant.value);
     } else {
-      numerator = -a1 + Sqrt(discriminant.value + discriminant.error);
+      numerator = -a₁ + Sqrt(discriminant.value);
     }
-    auto const solution1 = origin + numerator / (2.0 * a2);
-    auto const solution2 = origin + (2.0 * a0) / numerator;
-    if (solution1 < solution2) {
-      return {solution1, solution2};
+    auto const x₁ = origin + numerator / (2.0 * a₂);
+    auto const x₂ = origin + (2.0 * a₀) / numerator;
+    if (x₁ < x₂) {
+      return {x₁, x₂};
     } else {
-      return {solution2, solution1};
+      return {x₂, x₁};
     }
   }
 }

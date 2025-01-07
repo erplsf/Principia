@@ -1,18 +1,33 @@
+#include <cstdint>
 #include <limits>
+#include <memory>
 
+#include "absl/status/status.h"
 #include "astronomy/frames.hpp"
 #include "astronomy/standard_product_3.hpp"
 #include "base/bundle.hpp"
+#include "base/not_null.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
+#include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/embedded_explicit_runge_kutta_nyström_integrator.hpp"
+#include "integrators/methods.hpp"
+#include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "physics/body_surface_reference_frame.hpp"
+#include "physics/continuous_trajectory.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "physics/ephemeris.hpp"
+#include "physics/kepler_orbit.hpp"
+#include "physics/massless_body.hpp"
+#include "physics/oblate_body.hpp"
 #include "physics/solar_system.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -135,8 +150,7 @@ TEST_F(GeodesyTest, DISABLED_LAGEOS2) {
                     Ephemeris<ICRS>::NewtonianMotionEquation>(),
                 std::numeric_limits<std::int64_t>::max(),
                 /*length_integration_tolerance=*/1 * Milli(Metre),
-                /*speed_integration_tolerance=*/1 * Milli(Metre) / Second),
-            /*max_ephemeris_steps=*/std::numeric_limits<std::int64_t>::max());
+                /*speed_integration_tolerance=*/1 * Milli(Metre) / Second));
   };
   Bundle bundle;
   bundle.Add([&flow_lageos2, &primary_lageos2_trajectory]() {

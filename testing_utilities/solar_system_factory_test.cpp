@@ -1,15 +1,24 @@
 #include "testing_utilities/solar_system_factory.hpp"
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "astronomy/epoch.hpp"
 #include "astronomy/frames.hpp"
 #include "geometry/grassmann.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "physics/body.hpp"
 #include "physics/degrees_of_freedom.hpp"
+#include "physics/kepler_orbit.hpp"
 #include "physics/massive_body.hpp"
+#include "physics/solar_system.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -54,10 +63,10 @@ class SolarSystemFactoryTest : public testing::Test {
     return a * std::pow(secondary_body.mass() / primary_body.mass(), 2.0 / 5.0);
   }
 
-  // Tests whether |tertiary| orbits |secondary| in an orbit with excentricity
-  // |excentricity| within |relative_error| and, if |primary| is not null, tests
-  // that |tertiary| is within the Laplace sphere of |secondary| with respect
-  // to |*primary|. If |relative_error| is greater than 1e-6, it should be tight
+  // Tests whether `tertiary` orbits `secondary` in an orbit with excentricity
+  // `excentricity` within `relative_error` and, if `primary` is not null, tests
+  // that `tertiary` is within the Laplace sphere of `secondary` with respect
+  // to `*primary`. If `relative_error` is greater than 1e-6, it should be tight
   // within an order of magnitude.
   void TestStronglyBoundOrbit(
       double eccentricity,

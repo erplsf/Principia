@@ -6,6 +6,7 @@
 #include <iterator>
 #include <list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/btree_set.h"
@@ -229,11 +230,11 @@ void DiscreteTrajectorySegment<Frame>::WriteToMessage(
 }
 
 template<typename Frame>
-template<typename F, typename>
 DiscreteTrajectorySegment<Frame>
 DiscreteTrajectorySegment<Frame>::ReadFromMessage(
     serialization::DiscreteTrajectorySegment const& message,
-    DiscreteTrajectorySegmentIterator<Frame> const self) {
+    DiscreteTrajectorySegmentIterator<Frame> const self)
+  requires serializable<Frame> {
   // Note that while is_pre_hardy means that the save is pre-Hardy,
   // !is_pre_hardy does not mean it is Hardy or later; a pre-Hardy segment with
   // downsampling will have both fields present.
@@ -528,7 +529,7 @@ absl::Status DiscreteTrajectorySegment<Frame>::DownsampleIfNeeded() {
     }
 
     absl::StatusOr<std::list<typename ConstIterators::const_iterator>>
-        right_endpoints = FitHermiteSpline<Instant, Position<Frame>>(
+        right_endpoints = FitHermiteSpline<Position<Frame>, Instant>(
             dense_iterators,
             [](auto&& it) -> auto&& { return it->time; },
             [](auto&& it) -> auto&& {
@@ -558,7 +559,7 @@ absl::Status DiscreteTrajectorySegment<Frame>::DownsampleIfNeeded() {
     }
 
     // Poke holes in the timeline at the places given by
-    // |right_endpoints_times|.  This requires one lookup per erasure.
+    // `right_endpoints_times`.  This requires one lookup per erasure.
     auto left_it = dense_iterators.front();
     for (Instant const& right : right_endpoints_times) {
       ++left_it;
@@ -572,14 +573,14 @@ absl::Status DiscreteTrajectorySegment<Frame>::DownsampleIfNeeded() {
 }
 
 template<typename Frame>
-Hermite3<Instant, Position<Frame>>
+Hermite3<Position<Frame>, Instant>
 DiscreteTrajectorySegment<Frame>::GetInterpolation(
     typename Timeline::const_iterator const upper) const {
   CHECK(upper != timeline_.cbegin());
   auto const lower = std::prev(upper);
   auto const& [lower_time, lower_degrees_of_freedom] = *lower;
   auto const& [upper_time, upper_degrees_of_freedom] = *upper;
-  return Hermite3<Instant, Position<Frame>>{
+  return Hermite3<Position<Frame>, Instant>{
       {lower_time, upper_time},
       {lower_degrees_of_freedom.position(),
        upper_degrees_of_freedom.position()},
@@ -631,7 +632,7 @@ void DiscreteTrajectorySegment<Frame>::WriteToMessage(
   }
   message->set_was_downsampled(was_downsampled_);
 
-  // Convert the |exact| vector into a set, and add the extremities.  This
+  // Convert the `exact` vector into a set, and add the extremities.  This
   // ensures that we don't have redundancies.  The set is sorted by time to
   // guarantee that serialization is reproducible.
   auto time_comparator = [](value_type const* const left,

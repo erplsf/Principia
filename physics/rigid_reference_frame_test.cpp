@@ -1,13 +1,22 @@
 #include "physics/rigid_reference_frame.hpp"
 
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
+#include "geometry/orthogonal_map.hpp"
+#include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "physics/mock_rigid_reference_frame.hpp"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/mock_rigid_reference_frame.hpp"  // 🧙 For MockRigidReferenceFrame.  // NOLINT
+#include "physics/reference_frame.hpp"
+#include "physics/rigid_motion.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/componentwise.hpp"
@@ -30,10 +39,11 @@ using namespace principia::geometry::_instant;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_reference_frame;
-using namespace principia::physics::_rigid_reference_frame;
 using namespace principia::physics::_rigid_motion;
+using namespace principia::physics::_rigid_reference_frame;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
@@ -52,7 +62,7 @@ class ReferenceFrameTest : public testing::Test {
   using Translating = Rotating;  // A better name for linear acceleration.
 
   // Computes a first-order approximation of the acceleration using the
-  // potential returned by |mock_frame_|.  Useful for checking that the
+  // potential returned by `mock_frame_`.  Useful for checking that the
   // potential and the accelaration are consistent.
   Vector<Acceleration, Rotating> FirstOrderAccelerationFromPotential(
       Instant const& t,

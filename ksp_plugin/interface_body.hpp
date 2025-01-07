@@ -4,14 +4,25 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "absl/strings/str_split.h"
 #include "base/array.hpp"
 #include "geometry/orthogonal_map.hpp"
 #include "geometry/rotation.hpp"
+#include "geometry/sign.hpp"
+#include "geometry/space_transformations.hpp"
+#include "integrators/integrators.hpp"
+#include "ksp_plugin/orbit_analyser.hpp"
+#include "ksp_plugin/plugin.hpp"
+#include "ksp_plugin/renderer.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/rigid_motion.hpp"
+#include "quantities/elementary_functions.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -21,9 +32,11 @@ using namespace principia::base::_array;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_sign;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::integrators::_integrators;
 using namespace principia::ksp_plugin::_orbit_analyser;
 using namespace principia::ksp_plugin::_plugin;
+using namespace principia::ksp_plugin::_renderer;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_ephemeris;
 using namespace principia::physics::_rigid_motion;
@@ -221,6 +234,15 @@ inline bool operator==(NavigationManoeuvreFrenetTrihedron const& left,
          left.tangent == right.tangent;
 }
 
+inline bool operator==(Node const& left, Node const& right) {
+  return NaNIndependentEq(left.time, right.time) &&
+         left.world_position == right.world_position &&
+         NaNIndependentEq(left.apparent_inclination_in_degrees,
+                          right.apparent_inclination_in_degrees) &&
+         NaNIndependentEq(left.out_of_plane_velocity,
+                          right.out_of_plane_velocity);
+}
+
 inline bool operator==(OrbitAnalysis const& left, OrbitAnalysis const& right) {
   return left.elements == right.elements &&
          left.ground_track_equatorial_crossings ==
@@ -272,6 +294,10 @@ inline bool operator==(SolarTimesOfNodes const& left,
 
 inline bool operator==(Status const& left, Status const& right) {
   return left.error == right.error;
+}
+
+inline bool operator==(TQP const& left, TQP const& right) {
+  return NaNIndependentEq(left.t, right.t) && left.qp == right.qp;
 }
 
 inline bool operator==(WXYZ const& left, WXYZ const& right) {
@@ -350,6 +376,15 @@ FromFlightPlanAdaptiveStepParameters(FlightPlanAdaptiveStepParameters const&
           length_integration_tolerance,
           speed_integration_tolerance);
   return {adaptive_step_parameters, generalized_adaptive_step_parameters};
+}
+
+inline Renderer::Node FromNode(Plugin const& plugin,
+                               Node const& node) {
+  return Renderer::Node{
+      .time = FromGameTime(plugin, node.time),
+      .position = FromXYZ<Position<World>>(node.world_position),
+      .apparent_inclination = node.apparent_inclination_in_degrees * Degree,
+      .out_of_plane_velocity = node.out_of_plane_velocity * Metre / Second};
 }
 
 template<>
@@ -456,6 +491,15 @@ inline KeplerianElements ToKeplerianElements(
           *keplerian_elements.mean_anomaly / Radian};
 }
 
+inline Node ToNode(Plugin const& plugin,
+                   Renderer::Node const& node) {
+  return Node{
+      .time = ToGameTime(plugin, node.time),
+      .world_position = ToXYZ(node.position),
+      .apparent_inclination_in_degrees = node.apparent_inclination / Degree,
+      .out_of_plane_velocity = node.out_of_plane_velocity / (Metre / Second)};
+}
+
 inline QP ToQP(DegreesOfFreedom<World> const& dof) {
   return QPConverter<DegreesOfFreedom<World>>::ToQP(dof);
 }
@@ -520,6 +564,114 @@ template<typename T>
 Interval ToInterval(geometry::_interval::Interval<T> const& interval) {
   return {interval.min / si::Unit<T>,
           interval.max / si::Unit<T>};
+}
+
+inline Instant FromGameTime(Plugin const& plugin,
+                            double const t) {
+  return plugin.GameEpoch() + t * Second;
+}
+
+inline double ToGameTime(Plugin const& plugin,
+                         Instant const& t) {
+  return (t - plugin.GameEpoch()) / Second;
+}
+
+inline not_null<std::unique_ptr<NavigationFrame>> NewNavigationFrame(
+    Plugin const& plugin,
+    NavigationFrameParameters const& parameters) {
+  switch (parameters.extension) {
+    case serialization::BarycentricRotatingReferenceFrame::
+        kExtensionFieldNumber:
+      return plugin.NewBarycentricRotatingNavigationFrame(
+          parameters.primary_index, parameters.secondary_index);
+    case serialization::BodyCentredBodyDirectionReferenceFrame::
+        kExtensionFieldNumber:
+      return plugin.NewBodyCentredBodyDirectionNavigationFrame(
+          parameters.primary_index, parameters.secondary_index);
+    case serialization::BodyCentredNonRotatingReferenceFrame::
+        kExtensionFieldNumber:
+      return plugin.NewBodyCentredNonRotatingNavigationFrame(
+          parameters.centre_index);
+    case serialization::BodySurfaceReferenceFrame::kExtensionFieldNumber:
+      return plugin.NewBodySurfaceNavigationFrame(parameters.centre_index);
+    default:
+      LOG(FATAL) << "Unexpected extension " << parameters.extension;
+      std::abort();
+  }
+}
+
+inline not_null<std::unique_ptr<PlottingFrame>> NewPlottingFrame(
+    Plugin const& plugin,
+    PlottingFrameParameters const& parameters) {
+  CHECK_NOTNULL(parameters.primary_index);
+  CHECK_NOTNULL(parameters.secondary_index);
+  switch (parameters.extension) {
+    case serialization::RotatingPulsatingReferenceFrame::
+        kExtensionFieldNumber: {
+      std::vector<int> primary_indices;
+      for (int const* const* index_ptr = parameters.primary_index;
+           *index_ptr != nullptr;
+           ++index_ptr) {
+        primary_indices.push_back(**index_ptr);
+      }
+      std::vector<int> secondary_indices;
+      for (int const* const* index_ptr = parameters.secondary_index;
+           *index_ptr != nullptr;
+           ++index_ptr) {
+        secondary_indices.push_back(**index_ptr);
+      }
+      return plugin.NewRotatingPulsatingPlottingFrame(primary_indices,
+                                                      secondary_indices);
+    }
+    default:
+      int primary_index;
+      if (*parameters.primary_index == nullptr) {
+        primary_index = -1;
+      } else {
+        primary_index = **parameters.primary_index;
+      }
+      int secondary_index;
+      if (*parameters.secondary_index == nullptr) {
+        secondary_index = -1;
+      } else {
+        secondary_index = **parameters.secondary_index;
+      }
+      return NewNavigationFrame(plugin,
+                                {.extension = parameters.extension,
+                                 .centre_index = parameters.centre_index,
+                                 .primary_index = primary_index,
+                                 .secondary_index = secondary_index});
+  }
+}
+
+inline RigidMotion<EccentricPart, World> MakePartRigidMotion(
+    QP const& part_world_degrees_of_freedom,
+    WXYZ const& part_rotation,
+    XYZ const& part_angular_velocity) {
+  DegreesOfFreedom<World> const part_degrees_of_freedom =
+      FromQP<DegreesOfFreedom<World>>(part_world_degrees_of_freedom);
+  Rotation<EccentricPart, World> const part_to_world(FromWXYZ(part_rotation));
+  RigidTransformation<EccentricPart, World> const part_rigid_transformation(
+      EccentricPart::origin,
+      part_degrees_of_freedom.position(),
+      part_to_world.Forget<OrthogonalMap>());
+  RigidMotion<EccentricPart, World> part_rigid_motion(
+      part_rigid_transformation,
+      FromXYZ<AngularVelocity<World>>(part_angular_velocity),
+      part_degrees_of_freedom.velocity());
+  return part_rigid_motion;
+}
+
+// Same as `MakePartRigidMotion`, but uses the separate type `ApparentWorld` to
+// avoid mixing uncorrected and corrected data.
+inline RigidMotion<EccentricPart, ApparentWorld> MakePartApparentRigidMotion(
+    QP const& part_world_degrees_of_freedom,
+    WXYZ const& part_rotation,
+    XYZ const& part_angular_velocity) {
+  return RigidMotion<World, ApparentWorld>::Identity() *
+         MakePartRigidMotion(part_world_degrees_of_freedom,
+                             part_rotation,
+                             part_angular_velocity);
 }
 
 // Ownership is returned to the caller.  Note that the result may own additional
@@ -621,85 +773,13 @@ inline not_null<OrbitAnalysis*> NewOrbitAnalysis(
   return analysis;
 }
 
-inline Instant FromGameTime(Plugin const& plugin,
-                            double const t) {
-  return plugin.GameEpoch() + t * Second;
-}
-
-inline double ToGameTime(Plugin const& plugin,
-                         Instant const& t) {
-  return (t - plugin.GameEpoch()) / Second;
-}
-
-inline not_null<std::unique_ptr<NavigationFrame>> NewNavigationFrame(
-    Plugin const& plugin,
-    NavigationFrameParameters const& parameters) {
-  switch (parameters.extension) {
-    case serialization::BarycentricRotatingReferenceFrame::
-        kExtensionFieldNumber:
-      return plugin.NewBarycentricRotatingNavigationFrame(
-          parameters.primary_index, parameters.secondary_index);
-    case serialization::BodyCentredBodyDirectionReferenceFrame::
-        kExtensionFieldNumber:
-      return plugin.NewBodyCentredBodyDirectionNavigationFrame(
-          parameters.primary_index, parameters.secondary_index);
-    case serialization::BodyCentredNonRotatingReferenceFrame::
-        kExtensionFieldNumber:
-      return plugin.NewBodyCentredNonRotatingNavigationFrame(
-          parameters.centre_index);
-    case serialization::BodySurfaceReferenceFrame::kExtensionFieldNumber:
-      return plugin.NewBodySurfaceNavigationFrame(parameters.centre_index);
-    default:
-      LOG(FATAL) << "Unexpected extension " << parameters.extension;
-      base::noreturn();
-  }
-}
-
-inline not_null<std::unique_ptr<PlottingFrame>> NewPlottingFrame(
-    Plugin const& plugin,
-    PlottingFrameParameters const& parameters) {
-  switch (parameters.extension) {
-    case serialization::RotatingPulsatingReferenceFrame::kExtensionFieldNumber:
-      return plugin.NewRotatingPulsatingPlottingFrame(
-          parameters.primary_index, parameters.secondary_index);
-    default:
-      return NewNavigationFrame(
-          plugin,
-          {.extension = parameters.extension,
-           .centre_index = parameters.centre_index,
-           .primary_index = parameters.primary_index,
-           .secondary_index = parameters.secondary_index});
-  }
-}
-
-inline RigidMotion<EccentricPart, World> MakePartRigidMotion(
-    QP const& part_world_degrees_of_freedom,
-    WXYZ const& part_rotation,
-    XYZ const& part_angular_velocity) {
-  DegreesOfFreedom<World> const part_degrees_of_freedom =
-      FromQP<DegreesOfFreedom<World>>(part_world_degrees_of_freedom);
-  Rotation<EccentricPart, World> const part_to_world(FromWXYZ(part_rotation));
-  RigidTransformation<EccentricPart, World> const part_rigid_transformation(
-      EccentricPart::origin,
-      part_degrees_of_freedom.position(),
-      part_to_world.Forget<OrthogonalMap>());
-  RigidMotion<EccentricPart, World> part_rigid_motion(
-      part_rigid_transformation,
-      FromXYZ<AngularVelocity<World>>(part_angular_velocity),
-      part_degrees_of_freedom.velocity());
-  return part_rigid_motion;
-}
-
-// Same as |MakePartRigidMotion|, but uses the separate type |ApparentWorld| to
-// avoid mixing uncorrected and corrected data.
-inline RigidMotion<EccentricPart, ApparentWorld> MakePartApparentRigidMotion(
-    QP const& part_world_degrees_of_freedom,
-    WXYZ const& part_rotation,
-    XYZ const& part_angular_velocity) {
-  return RigidMotion<World, ApparentWorld>::Identity() *
-         MakePartRigidMotion(part_world_degrees_of_freedom,
-                             part_rotation,
-                             part_angular_velocity);
+inline FlightPlan& GetFlightPlan(Plugin const& plugin,
+                                 char const* const vessel_guid) {
+  Vessel& vessel = *plugin.GetVessel(vessel_guid);
+  CHECK(vessel.has_flight_plan()) << vessel_guid;
+  // Force deserialization of the flight plan, now that we actually need it.
+  vessel.ReadFlightPlanFromMessage();
+  return vessel.flight_plan();
 }
 
 }  // namespace interface

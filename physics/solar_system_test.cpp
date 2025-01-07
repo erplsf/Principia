@@ -1,16 +1,16 @@
 #include "physics/solar_system.hpp"
 
-#include <algorithm>
-#include <ios>
+#include <utility>
 
 #include "absl/strings/str_replace.h"
 #include "astronomy/frames.hpp"
-#include "base/fingerprint2011.hpp"
+#include "geometry/frame.hpp"
 #include "geometry/instant.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "integrators/methods.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
+#include "physics/ephemeris.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/numerics.hpp"
 
@@ -19,7 +19,6 @@ namespace physics {
 
 using ::testing::ElementsAreArray;
 using namespace principia::astronomy::_frames;
-using namespace principia::base::_fingerprint2011;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_instant;
 using namespace principia::integrators::_methods;

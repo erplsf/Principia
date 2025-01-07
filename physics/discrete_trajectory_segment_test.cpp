@@ -8,9 +8,11 @@
 #include "geometry/frame.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/space.hpp"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/discrete_trajectory_segment_iterator.hpp"
 #include "physics/discrete_trajectory_types.hpp"
+#include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
@@ -18,7 +20,7 @@
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/discrete_trajectory_factories.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics_matchers.hpp"
 
 namespace principia {
@@ -90,7 +92,7 @@ class DiscreteTrajectorySegmentTest : public ::testing::Test {
     return DiscreteTrajectorySegmentIterator<World>(segments, iterator);
   }
 
-  // Constructs a list of |n| segments which are properly initialized.
+  // Constructs a list of `n` segments which are properly initialized.
   // TODO(phl): Move to a central place.
   static not_null<std::unique_ptr<Segments>> MakeSegments(const int n) {
     auto segments = make_not_null_unique<Segments>(n);

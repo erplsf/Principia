@@ -4,17 +4,22 @@
 #include <limits>
 #include <vector>
 
-#include "base/macros.hpp"
 #include "geometry/instant.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/integrators.hpp"
+#include "integrators/methods.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/integration.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -240,7 +245,7 @@ TEST_F(EmbeddedExplicitRungeKuttaIntegratorTest, MaxSteps) {
   EXPECT_THAT(solution.back().s.value, Lt(t_final));
   EXPECT_EQ(40, solution.size());
 
-  // Check that a |max_steps| greater than or equal to the unconstrained number
+  // Check that a `max_steps` greater than or equal to the unconstrained number
   // of steps has no effect.
   for (std::int64_t const max_steps :
        {steps_forward, steps_forward + 1234}) {
@@ -403,7 +408,7 @@ TEST_F(EmbeddedExplicitRungeKuttaIntegratorTest, Restart) {
         AlmostEquals(1.237'882'807'009'299'31 * Second, 0));
   }
 
-  // Do it again in one call to |Solve| and check associativity.
+  // Do it again in one call to `Solve` and check associativity.
   std::vector<ODE::State> solution2;
   {
     ODE harmonic_oscillator;

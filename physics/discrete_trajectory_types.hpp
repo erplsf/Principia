@@ -3,7 +3,7 @@
 #include <list>
 
 #include "absl/container/btree_set.h"
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For forward declarations.
 #include "geometry/instant.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "quantities/quantities.hpp"
@@ -13,21 +13,21 @@
 namespace principia {
 namespace physics {
 
-FORWARD_DECLARE_FROM(discrete_trajectory_segment,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectorySegment);
+FORWARD_DECLARE(TEMPLATE(typename Frame) class,
+                DiscreteTrajectorySegment,
+                FROM(discrete_trajectory_segment),
+                INTO(discrete_trajectory_types));
 
 namespace _discrete_trajectory_types {
 namespace internal {
 
 using namespace principia::geometry::_instant;
 using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::physics::_discrete_trajectory_segment;
 using namespace principia::quantities::_quantities;
 
-// |max_dense_intervals| is the maximal number of dense intervals before
-// downsampling occurs.  |tolerance| is the tolerance for downsampling with
-// |FitHermiteSpline|.
+// `max_dense_intervals` is the maximal number of dense intervals before
+// downsampling occurs.  `tolerance` is the tolerance for downsampling with
+// `FitHermiteSpline`.
 struct DownsamplingParameters {
   std::int64_t max_dense_intervals;
   Length tolerance;

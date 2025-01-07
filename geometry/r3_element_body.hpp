@@ -7,10 +7,10 @@
 #include <string>
 #include <type_traits>
 
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For PRINCIPIA_USE_SSE3_INTRINSICS.
 #include "glog/logging.h"
+#include "numerics/fma.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/quantities.hpp"
 #include "quantities/serialization.hpp"
 
 namespace principia {
@@ -20,7 +20,6 @@ namespace internal {
 
 using namespace principia::numerics::_fma;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_serialization;
 
 // We want zero initialization here, so the default constructor won't do.
@@ -62,7 +61,7 @@ Scalar& R3Element<Scalar>::operator[](int const index) {
       return z;
     default:
       DLOG(FATAL) << FUNCTION_SIGNATURE << ": index = " << index;
-      base::noreturn();
+      std::abort();
   }
 }
 
@@ -78,14 +77,14 @@ Scalar const& R3Element<Scalar>::operator[](
       return z;
     default:
       DLOG(FATAL) << FUNCTION_SIGNATURE << ": index = " << index;
-      base::noreturn();
+      std::abort();
   }
 }
 
 template<typename Scalar>
 R3Element<Scalar>& R3Element<Scalar>::operator+=(
     R3Element<Scalar> const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   xy = _mm_add_pd(xy, right.xy);
   zt = _mm_add_sd(zt, right.zt);
 #else
@@ -99,7 +98,7 @@ R3Element<Scalar>& R3Element<Scalar>::operator+=(
 template<typename Scalar>
 R3Element<Scalar>& R3Element<Scalar>::operator-=(
     R3Element<Scalar> const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   xy = _mm_sub_pd(xy, right.xy);
   zt = _mm_sub_sd(zt, right.zt);
 #else
@@ -112,7 +111,7 @@ R3Element<Scalar>& R3Element<Scalar>::operator-=(
 
 template<typename Scalar>
 R3Element<Scalar>& R3Element<Scalar>::operator*=(double const right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   __m128d const right_128d = ToM128D(right);
   xy = _mm_mul_pd(xy, right_128d);
   zt = _mm_mul_sd(zt, right_128d);
@@ -126,7 +125,7 @@ R3Element<Scalar>& R3Element<Scalar>::operator*=(double const right) {
 
 template<typename Scalar>
 R3Element<Scalar>& R3Element<Scalar>::operator/=(double const right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   __m128d const right_128d = ToM128D(right);
   xy = _mm_div_pd(xy, right_128d);
   zt = _mm_div_sd(zt, right_128d);
@@ -208,6 +207,16 @@ SphericalCoordinates<Scalar> RadiusLatitudeLongitude(Scalar const& radius,
 }
 
 template<typename Scalar>
+std::ostream& operator<<(
+    std::ostream& out,
+    SphericalCoordinates<Scalar> const& spherical_coordinates) {
+  out << spherical_coordinates.radius
+      << ", " << spherical_coordinates.latitude
+      << ", " << spherical_coordinates.longitude;
+  return out;
+}
+
+template<typename Scalar>
 R3Element<Scalar> operator+(R3Element<Scalar> const& right) {
   return R3Element<Scalar>(+right.x, +right.y, +right.z);
 }
@@ -220,7 +229,7 @@ R3Element<Scalar> operator-(R3Element<Scalar> const& right) {
 template<typename Scalar>
 R3Element<Scalar> operator+(R3Element<Scalar> const& left,
                             R3Element<Scalar> const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   return R3Element<Scalar>(_mm_add_pd(left.xy, right.xy),
                            _mm_add_sd(left.zt, right.zt));
 #else
@@ -233,7 +242,7 @@ R3Element<Scalar> operator+(R3Element<Scalar> const& left,
 template<typename Scalar>
 R3Element<Scalar> operator-(R3Element<Scalar> const& left,
                             R3Element<Scalar> const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   return R3Element<Scalar>(_mm_sub_pd(left.xy, right.xy),
                            _mm_sub_sd(left.zt, right.zt));
 #else
@@ -243,11 +252,12 @@ R3Element<Scalar> operator-(R3Element<Scalar> const& left,
 #endif
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3Element<Product<LScalar, RScalar>> operator*(
     LScalar const& left,
     R3Element<RScalar> const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   __m128d const left_128d = ToM128D(left);
   return R3Element<Product<LScalar, RScalar>>(_mm_mul_pd(right.xy, left_128d),
                                               _mm_mul_sd(right.zt, left_128d));
@@ -258,10 +268,11 @@ R3Element<Product<LScalar, RScalar>> operator*(
 #endif
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3Element<Product<LScalar, RScalar>> operator*(R3Element<LScalar> const& left,
                                                RScalar const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   __m128d const right_128d = ToM128D(right);
   return R3Element<Product<LScalar, RScalar>>(_mm_mul_pd(left.xy, right_128d),
                                               _mm_mul_sd(left.zt, right_128d));
@@ -272,10 +283,11 @@ R3Element<Product<LScalar, RScalar>> operator*(R3Element<LScalar> const& left,
 #endif
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3Element<Quotient<LScalar, RScalar>> operator/(R3Element<LScalar> const& left,
                                                 RScalar const& right) {
-#if PRINCIPIA_USE_SSE3_INTRINSICS
+#if PRINCIPIA_USE_SSE3_INTRINSICS()
   __m128d const right_128d = ToM128D(right);
   return R3Element<Quotient<LScalar, RScalar>>(_mm_div_pd(left.xy, right_128d),
                                                _mm_div_sd(left.zt, right_128d));
@@ -286,7 +298,8 @@ R3Element<Quotient<LScalar, RScalar>> operator/(R3Element<LScalar> const& left,
 #endif
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3Element<Product<LScalar, RScalar>> FusedMultiplyAdd(
     R3Element<LScalar> const& a,
     RScalar const& b,
@@ -300,7 +313,8 @@ R3Element<Product<LScalar, RScalar>> FusedMultiplyAdd(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3Element<Product<LScalar, RScalar>> FusedMultiplySubtract(
     R3Element<LScalar> const& a,
     RScalar const& b,
@@ -314,7 +328,8 @@ R3Element<Product<LScalar, RScalar>> FusedMultiplySubtract(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplyAdd(
     R3Element<LScalar> const& a,
     RScalar const& b,
@@ -328,7 +343,8 @@ R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplyAdd(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplySubtract(
     R3Element<LScalar> const& a,
     RScalar const& b,
@@ -342,7 +358,8 @@ R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplySubtract(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3Element<Product<LScalar, RScalar>> FusedMultiplyAdd(
     LScalar const& a,
     R3Element<RScalar> const& b,
@@ -356,7 +373,8 @@ R3Element<Product<LScalar, RScalar>> FusedMultiplyAdd(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3Element<Product<LScalar, RScalar>> FusedMultiplySubtract(
     LScalar const& a,
     R3Element<RScalar> const& b,
@@ -370,7 +388,8 @@ R3Element<Product<LScalar, RScalar>> FusedMultiplySubtract(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplyAdd(
     LScalar const& a,
     R3Element<RScalar> const& b,
@@ -384,7 +403,8 @@ R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplyAdd(
   }
 }
 
-template<typename LScalar, typename RScalar, typename>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplySubtract(
     LScalar const& a,
     R3Element<RScalar> const& b,
@@ -399,14 +419,14 @@ R3Element<Product<LScalar, RScalar>> FusedNegatedMultiplySubtract(
 }
 
 template<typename Scalar>
-bool operator==(R3Element<Scalar> const& left,
-                R3Element<Scalar> const& right) {
+constexpr bool operator==(R3Element<Scalar> const& left,
+                          R3Element<Scalar> const& right) {
   return left.x == right.x && left.y == right.y && left.z == right.z;
 }
 
 template<typename Scalar>
-bool operator!=(R3Element<Scalar> const& left,
-                R3Element<Scalar> const& right) {
+constexpr bool operator!=(R3Element<Scalar> const& left,
+                          R3Element<Scalar> const& right) {
   return left.x != right.x || left.y != right.y || left.z != right.z;
 }
 

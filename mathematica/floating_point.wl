@@ -4,7 +4,7 @@ BeginPackage["IEEE754FloatingPoint`"]
 
 
 (*Useful, but doesn't really belong here...*)
-ConditionNumber[f_,params_]:=D[f,{params}]params/f;
+ConditionNumber;
 
 
 SetFloatingPointFormat;
@@ -22,6 +22,7 @@ NearestTiesToEven;
 Toward0;
 TowardPositiveInfinity;
 TowardNegativeInfinity;
+RoundingMode;
 
 
 Representation;
@@ -36,13 +37,17 @@ Bits;
 
 
 HexLiteral;
+Attributes[HexLiteral]={Listable}
 
 
 CorrectlyRound;
-\[LeftAngleBracket]x_\[RightAngleBracket]:=CorrectlyRound[x];
+Attributes[CorrectlyRound]={Listable};
 
 
 Begin["`Private`"]
+
+
+ConditionNumber[f_,params_]:=D[f,{params}]params/f;
 
 
 SetFloatingPointFormat[{sBits_,eBits_}]:=
@@ -61,33 +66,41 @@ TowardNegativeInfinity=Floor;
 mantissaExponent12[x_]:={#[[1]]*2,#[[2]]-1}&[MantissaExponent[x,2]];
 Representation[x_]:=Block[
 {sign,magnitude,\[Mu],e},
-sign=Sign[x];
+sign=If[x<0,2^(exponentBits+significandBits-1),0];
 magnitude=Abs[x];
 If[magnitude==\[Infinity],
-sign(2^exponentBits-1)2^(significandBits-1),
+sign+(2^exponentBits-1)2^(significandBits-1),
 If[x==0,0,
 {\[Mu],e}=mantissaExponent12[magnitude];
 If[e<=-bias,
 2^(significandBits-1) 2^(e+bias-1) \[Mu],
-sign(2^(significandBits-1) (\[Mu]-1)+2^(significandBits-1) (e+bias))
+sign+(2^(significandBits-1) (\[Mu]-1)+2^(significandBits-1) (e+bias))
 ]]]];
 FromRepresentation[n_]:=Block[
 {sign,magnitude,\[Mu],e},
-sign=Sign[n];
-magnitude=Abs[n];
+sign=If[n>=2^(exponentBits+significandBits-1),-1,1];
+magnitude=Mod[n,2^(exponentBits+significandBits-1)];
 \[Mu]=Mod[magnitude,2^(significandBits-1)];
 e=IntegerPart[magnitude/2^(significandBits-1)];
 If[e==0,
 \[Mu]/2^(significandBits-1) 2^(1-bias),
 sign(1+\[Mu]/2^(significandBits-1))2^(e-bias)]];
-CorrectlyRound[x_]:=If[x==\[Infinity]||x==-\[Infinity],x,If[Abs[#]>=2^(bias+1),Sign[x]\[Infinity],#]&@FromRepresentation[correctlyRoundRepresentation[Representation[x]]]];
 UlpDistance[x_,y_]:=Abs[Representation[x]-Representation[y]]
 
 
-Bits[n_]:=If[n>=0,"0","1"]<>
+CorrectlyRound[x_,OptionsPattern[]]:=With[
+{rounding=If[OptionValue[RoundingMode]===Automatic,correctlyRoundRepresentation,OptionValue[RoundingMode]]},
+If[x==\[Infinity]||x==-\[Infinity],x,
+If[Abs[#]>=2^(bias+1),Sign[x]\[Infinity],#]&
+@FromRepresentation[rounding[Representation[x]]]]];
+UlpDistance[x_,y_]:=Abs[Representation[x]-Representation[y]];
+Options[CorrectlyRound]={RoundingMode->Automatic};
+
+
+Bits[n_, extraBits_: 10]:=If[n>=0,"0","1"]<>
 "|"<>IntegerString[IntegerPart[Representation[Abs[n]]/2^(significandBits-1)],2,exponentBits]<>
 "|"<>IntegerString[Mod[IntegerPart[Representation[Abs[n]]],2^(significandBits-1)],2,significandBits-1]<>
-";"<>If[FractionalPart[Representation[Abs[n]]]==0,"",ToString/@RealDigits[N[FractionalPart[Representation[Abs[n]]],5],2,10,-1][[1]]<>"\[Ellipsis]"];
+";"<>If[FractionalPart[Representation[Abs[n]]]==0,"",ToString/@RealDigits[N[FractionalPart[Representation[Abs[n]]],extraBits/2],2,extraBits,-1][[1]]<>"\[Ellipsis]"];
 
 
 fullHexDigits:=Floor[(significandBits-1)/4]
@@ -99,7 +112,7 @@ leastFullHexDigitValue:=2^(significandBits-1)/16^fullHexDigits
 leastHexDigitValue:=If[leastFullHexDigitValue>1,leastFullHexDigitValue/16,leastFullHexDigitValue]
 
 
-HexLiteral[n_]:=If[n<0,"-",""]<>
+HexLiteral[n_]:=If[n==0,"0.0",If[n<0,"-",""]<>
 "0x1."<>ToUpperCase[
 IntegerString[
 Mod[IntegerPart[Representation[Abs[n]]/leastFullHexDigitValue],16^fullHexDigits],16,fullHexDigits]<>
@@ -118,7 +131,7 @@ Switch[
 binary32,"f",
 binary64,"",
 x87extended,"l",
-_,"_"<>ToString[significandBits]<>"_sigbits"]
+_,"_"<>ToString[significandBits]<>"_sigbits"]]
 
 
 smol=-12;
@@ -139,6 +152,10 @@ EndPackage[]
 
 (* ::Section:: *)
 (*Examples*)
+
+
+(* ::Code:: *)
+(*\[LeftAngleBracket]x_\[RightAngleBracket]:=CorrectlyRound[x];*)
 
 
 (* ::Code:: *)
@@ -200,3 +217,11 @@ EndPackage[]
 (*SetFloatingPointFormat[format];*)
 (*{#,{Bits[#],HexLiteral[#]},{Bits[CorrectlyRound[#]],HexLiteral[CorrectlyRound[#]]}}&/@{\[Pi],1/3,Sqrt[2],1+2^-format[[1]],1+2^(-format[[1]]-5)}//TableForm,*)
 (*{format,{binary16,binary32,binary64,x87extended}}]//TableForm*)
+(*SetRoundingMode[TowardPositiveInfinity];*)
+(*CorrectlyRound[1/3]*)
+(*SetRoundingMode[TowardNegativeInfinity];*)
+(*CorrectlyRound[1/3]*)
+(*CorrectlyRound[1/3,RoundingMode->Toward0]*)
+(*CorrectlyRound[1/3,RoundingMode->TowardPositiveInfinity]*)
+(*CorrectlyRound[1/3,RoundingMode->TowardNegativeInfinity]*)
+(*CorrectlyRound[1/3,RoundingMode->NearestTiesToEven]*)

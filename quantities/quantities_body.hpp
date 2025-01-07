@@ -7,8 +7,6 @@
 #include <limits>
 #include <string>
 
-#include "base/macros.hpp"
-
 namespace principia {
 namespace quantities {
 namespace _quantities {
@@ -67,38 +65,6 @@ template<typename D>
 FORCE_INLINE(constexpr) Quantity<D> Quantity<D>::operator-(
     Quantity const& right) const {
   return Quantity(magnitude_ - right.magnitude_);
-}
-
-// Comparison operators
-
-template<typename D>
-constexpr bool Quantity<D>::operator>(Quantity const& right) const {
-  return magnitude_ > right.magnitude_;
-}
-
-template<typename D>
-constexpr bool Quantity<D>::operator<(Quantity const& right) const {
-  return magnitude_ < right.magnitude_;
-}
-
-template<typename D>
-constexpr bool Quantity<D>::operator>=(Quantity const& right) const {
-  return magnitude_ >= right.magnitude_;
-}
-
-template<typename D>
-constexpr bool Quantity<D>::operator<=(Quantity const& right) const {
-  return magnitude_ <= right.magnitude_;
-}
-
-template<typename D>
-constexpr bool Quantity<D>::operator==(Quantity const& right) const {
-  return magnitude_ == right.magnitude_;
-}
-
-template<typename D>
-constexpr bool Quantity<D>::operator!=(Quantity const& right) const {
-  return magnitude_ != right.magnitude_;
 }
 
 template<typename D>
@@ -213,6 +179,12 @@ inline std::string DebugString(double const number, int const precision) {
   CHECK_LE(0, size);
   result.resize(size);
   return result;
+}
+
+template<typename N>
+  requires is_number<N>::value
+std::string DebugString(N const& number, int const precision) {
+  return number.str();
 }
 
 template<typename D>

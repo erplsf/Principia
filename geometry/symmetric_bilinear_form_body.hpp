@@ -5,11 +5,8 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <utility>
 
-#include "geometry/grassmann.hpp"
-#include "geometry/r3_element.hpp"
-#include "geometry/rotation.hpp"
-#include "geometry/sign.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
@@ -20,7 +17,6 @@ namespace _symmetric_bilinear_form {
 namespace internal {
 
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
@@ -259,10 +255,10 @@ void SymmetricBilinearForm<Scalar, Frame, Multivector>::WriteToMessage(
 template<typename Scalar,
          typename Frame,
          template<typename, typename> typename Multivector>
-template<typename, typename>
 SymmetricBilinearForm<Scalar, Frame, Multivector>
 SymmetricBilinearForm<Scalar, Frame, Multivector>::ReadFromMessage(
-    serialization::SymmetricBilinearForm const& message) {
+    serialization::SymmetricBilinearForm const& message)
+  requires serializable<Frame>{
   Frame::ReadFromMessage(message.frame());
   return SymmetricBilinearForm(
       R3x3Matrix<Scalar>::ReadFromMessage(message.matrix()));
@@ -408,24 +404,6 @@ Bivector<Product<LScalar, RScalar>, Frame> Anticommutator(
   return Bivector<Product<LScalar, RScalar>, Frame>(
       form.matrix_.Trace() * bivector.coordinates() -
       form.matrix_ * bivector.coordinates());
-}
-
-template<typename Scalar,
-         typename Frame,
-         template<typename, typename> typename Multivector>
-bool operator==(
-    SymmetricBilinearForm<Scalar, Frame, Multivector> const& left,
-    SymmetricBilinearForm<Scalar, Frame, Multivector> const& right) {
-  return left.matrix_ == right.matrix_;
-}
-
-template<typename Scalar,
-         typename Frame,
-         template<typename, typename> typename Multivector>
-bool operator!=(
-    SymmetricBilinearForm<Scalar, Frame, Multivector> const& left,
-    SymmetricBilinearForm<Scalar, Frame, Multivector> const& right) {
-  return left.matrix_ != right.matrix_;
 }
 
 template<typename Scalar,

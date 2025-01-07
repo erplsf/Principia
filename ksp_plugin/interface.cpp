@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#define MICROSOFT_WINDOWS_WINBASE_H_DEFINE_INTERLOCKED_CPLUSPLUS_OVERLOADS 0
 #if OS_WIN
 #include <windows.h>
 #include <psapi.h>
@@ -22,39 +23,53 @@
 #include "astronomy/time_scales.hpp"
 #include "base/array.hpp"
 #include "base/base64.hpp"
+#include "base/cpuid.hpp"
 #include "base/encoder.hpp"
 #include "base/fingerprint2011.hpp"
 #include "base/flags.hpp"
 #include "base/hexadecimal.hpp"
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For NAMED.
 #include "base/not_null.hpp"
-#include "base/optional_logging.hpp"
+#include "base/optional_logging.hpp"  // 🧙 For logging.
 #include "base/pull_serializer.hpp"
 #include "base/push_deserializer.hpp"
 #include "base/serialization.hpp"
 #include "base/version.hpp"
-#include "gipfeli/gipfeli.h"
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
+#include "geometry/orthogonal_map.hpp"
 #include "geometry/quaternion.hpp"
+#include "geometry/r3_element.hpp"
 #include "geometry/r3x3_matrix.hpp"
 #include "geometry/rotation.hpp"
+#include "gipfeli/gipfeli.h"
 #include "google/protobuf/arena.h"
+#include "integrators/integrators.hpp"
 #include "journal/method.hpp"
-#include "journal/profiles.hpp"
+#include "journal/profiles.hpp"  // 🧙 For generated profiles.
 #include "journal/recorder.hpp"
 #include "ksp_plugin/frames.hpp"
 #include "ksp_plugin/identification.hpp"
 #include "ksp_plugin/iterators.hpp"
 #include "ksp_plugin/part.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
 #include "physics/discrete_trajectory_segment.hpp"
-#include "physics/kepler_orbit.hpp"
+#include "physics/ephemeris.hpp"
+#include "physics/frame_field.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/oblate_body.hpp"
+#include "physics/rigid_motion.hpp"
+#include "physics/rotating_body.hpp"
+#include "physics/rotating_pulsating_reference_frame.hpp"
 #include "physics/solar_system.hpp"
 #include "physics/tensors.hpp"
 #include "quantities/astronomy.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/parser.hpp"
 #include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "serialization/astronomy.pb.h"
 #include "serialization/geometry.pb.h"
 #include "serialization/ksp_plugin.pb.h"
@@ -69,6 +84,7 @@ using namespace principia::astronomy::_epoch;
 using namespace principia::astronomy::_time_scales;
 using namespace principia::base::_array;
 using namespace principia::base::_base64;
+using namespace principia::base::_cpuid;
 using namespace principia::base::_encoder;
 using namespace principia::base::_fingerprint2011;
 using namespace principia::base::_flags;
@@ -86,6 +102,7 @@ using namespace principia::geometry::_r3_element;
 using namespace principia::geometry::_r3x3_matrix;
 using namespace principia::geometry::_rotation;
 using namespace principia::integrators::_integrators;
+using namespace principia::journal::_method;
 using namespace principia::journal::_recorder;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::ksp_plugin::_identification;
@@ -100,6 +117,7 @@ using namespace principia::physics::_massive_body;
 using namespace principia::physics::_oblate_body;
 using namespace principia::physics::_rigid_motion;
 using namespace principia::physics::_rotating_body;
+using namespace principia::physics::_rotating_pulsating_reference_frame;
 using namespace principia::physics::_solar_system;
 using namespace principia::physics::_tensors;
 using namespace principia::quantities::_astronomy;
@@ -135,7 +153,7 @@ Ephemeris<Barycentric>::AccuracyParameters MakeAccuracyParameters(
 
 Ephemeris<Barycentric>::AdaptiveStepParameters MakeAdaptiveStepParameters(
     ConfigurationAdaptiveStepParameters const& parameters) {
-  // It is erroneous for a psychohistory integration to fail, so the |max_steps|
+  // It is erroneous for a psychohistory integration to fail, so the `max_steps`
   // must be unlimited.
   return Ephemeris<Barycentric>::AdaptiveStepParameters(
       ParseAdaptiveStepSizeIntegrator<
@@ -300,10 +318,10 @@ void __cdecl principia__ActivatePlayer() {
   Vessel::MakeSynchronous();
 }
 
-// If |activate| is true and there is no active journal, create one and
-// activate it.  If |activate| is false and there is an active journal,
+// If `activate` is true and there is no active journal, create one and
+// activate it.  If `activate` is false and there is an active journal,
 // deactivate it.  Does nothing if there is already a journal in the desired
-// state.  |verbose| causes methods to be output in the INFO log before being
+// state.  `verbose` causes methods to be output in the INFO log before being
 // executed.
 void __cdecl principia__ActivateRecorder(bool const activate) {
   // NOTE: Do not journal!  You'd end up with half a message in the journal and
@@ -384,12 +402,12 @@ void __cdecl principia__CatchUpLaggingVessels(
   VesselSet collided_vessel_set;
   plugin->CatchUpLaggingVessels(collided_vessel_set);
   *collided_vessels =
-      new TypedIterator<VesselSet>(std::move(collided_vessel_set));
+      new TypedIterator<VesselSet>(std::move(collided_vessel_set), plugin);
   return m.Return();
 }
 
-// Calls |plugin->CelestialFromParent| with the arguments given.
-// |plugin| must not be null.  No transfer of ownership.
+// Calls `plugin->CelestialFromParent` with the arguments given.
+// `plugin` must not be null.  No transfer of ownership.
 QP __cdecl principia__CelestialFromParent(Plugin const* const plugin,
                                           int const celestial_index) {
   journal::Method<journal::CelestialFromParent> m({plugin, celestial_index});
@@ -478,9 +496,9 @@ void __cdecl principia__DeleteInterchange(void const** const native_pointer) {
   return m.Return();
 }
 
-// Deletes and nulls |*plugin|.
-// |plugin| must not be null.  No transfer of ownership of |*plugin|, takes
-// ownership of |**plugin|.
+// Deletes and nulls `*plugin`.
+// `plugin` must not be null.  No transfer of ownership of `*plugin`, takes
+// ownership of `**plugin`.
 void __cdecl principia__DeletePlugin(Plugin const** const plugin) {
   CHECK_NOTNULL(plugin);
   journal::Method<journal::DeletePlugin> m({plugin}, {plugin});
@@ -494,9 +512,9 @@ void __cdecl principia__DeletePlugin(Plugin const** const plugin) {
   return m.Return();
 }
 
-// Deletes and nulls |*native_string|.  |native_string| must not be null.  No
-// transfer of ownership of |*native_string|, takes ownership of
-// |**native_string|.
+// Deletes and nulls `*native_string`.  `native_string` must not be null.  No
+// transfer of ownership of `*native_string`, takes ownership of
+// `**native_string`.
 void __cdecl principia__DeleteString(char const** const native_string) {
   journal::Method<journal::DeleteString> m({native_string}, {native_string});
   TakeOwnershipArray(native_string);
@@ -511,12 +529,12 @@ void __cdecl principia__DeleteU16String(char16_t const** const native_string) {
   return m.Return();
 }
 
-// The caller takes ownership of |**plugin| when it is not null.  No transfer of
-// ownership of |*serialization| or |**deserializer|.  |*deserializer| and
-// |*plugin| must be null on the first call and must be passed unchanged to the
+// The caller takes ownership of `**plugin` when it is not null.  No transfer of
+// ownership of `*serialization` or `**deserializer`.  `*deserializer` and
+// `*plugin` must be null on the first call and must be passed unchanged to the
 // successive calls.  The caller must perform an extra call with
-// |serialization_size| set to 0 to indicate the end of the input stream.  When
-// this last call returns, |*plugin| is not null and may be used by the caller.
+// `serialization_size` set to 0 to indicate the end of the input stream.  When
+// this last call returns, `*plugin` is not null and may be used by the caller.
 void __cdecl principia__DeserializePlugin(
     char const* const serialization,
     PushDeserializer** const deserializer,
@@ -558,7 +576,7 @@ void __cdecl principia__DeserializePlugin(
   (*deserializer)->Push(std::move(bytes));
 
   // If the data was empty, delete the deserializer.  This ensures that
-  // |*plugin| is filled.
+  // `*plugin` is filled.
   if (bytes_size == 0) {
     LOG(INFO) << "End plugin deserialization";
     TakeOwnership(deserializer);
@@ -567,13 +585,45 @@ void __cdecl principia__DeserializePlugin(
   return m.Return();
 }
 
-// Calls |plugin->EndInitialization|.
-// |plugin| must not be null.  No transfer of ownership.
+// Calls `plugin->EndInitialization`.
+// `plugin` must not be null.  No transfer of ownership.
 void __cdecl principia__EndInitialization(Plugin* const plugin) {
   journal::Method<journal::EndInitialization> m({plugin});
   CHECK_NOTNULL(plugin);
   plugin->EndInitialization();
   return m.Return();
+}
+
+int __cdecl principia__EquipotentialCount(Plugin* const plugin) {
+  journal::Method<journal::EquipotentialCount> m({plugin});
+  CHECK_NOTNULL(plugin);
+  plugin->geometric_potential_plotter().RefreshEquipotentials();
+  auto const* equipotentials =
+      plugin->geometric_potential_plotter().equipotentials();
+  PlottingFrame const* plotting_frame = plugin->renderer().GetPlottingFrame();
+  auto const* plotting_frame_as_rotating_pulsating =
+      dynamic_cast<
+          RotatingPulsatingReferenceFrame<Barycentric,
+                                          Navigation> const*>(plotting_frame);
+  if (!plotting_frame_as_rotating_pulsating) {
+    // We do not draw equipotentials in the current plotting frame.
+    return m.Return(0);
+  } else {
+    // TODO(egg): We may not want to recompute all the time.
+    plugin->geometric_potential_plotter().RequestEquipotentials(
+        {plotting_frame_as_rotating_pulsating->primaries(),
+         plotting_frame_as_rotating_pulsating->secondaries(),
+         plugin->CurrentTime()});
+    if (equipotentials != nullptr &&
+        plotting_frame_as_rotating_pulsating->primaries() ==
+            equipotentials->parameters.primaries &&
+        plotting_frame_as_rotating_pulsating->secondaries() ==
+            equipotentials->parameters.secondaries) {
+      return m.Return(equipotentials->lines.size());
+    } else {
+      return m.Return(0);
+    }
+  }
 }
 
 void __cdecl principia__FreeVesselsAndPartsAndCollectPileUps(
@@ -682,8 +732,11 @@ void __cdecl principia__InitGoogleLogging() {
                << " built on " << BuildDate
                << " by " << principia::base::CompilerName
                << " version " << principia::base::CompilerVersion
-               << " for " << principia::base::OperatingSystem
-               << " " << principia::base::Architecture;
+               << " for " << principia::base::OperatingSystem << " "
+               << principia::base::Architecture;
+    LOG(ERROR) << "Running on " << ProcessorBrandString() << " ("
+               << CPUVendorIdentificationString() << ")";
+    LOG(ERROR) << "with " << CPUFeatures();
 #if OS_WIN
   MODULEINFO module_info;
   memset(&module_info, 0, sizeof(module_info));
@@ -823,8 +876,8 @@ void __cdecl principia__InsertCelestialJacobiKeplerian(
   return m.Return();
 }
 
-// Calls |plugin->InsertOrKeepVessel| with the arguments given.
-// |plugin| must not be null.  No transfer of ownership.
+// Calls `plugin->InsertOrKeepVessel` with the arguments given.
+// `plugin` must not be null.  No transfer of ownership.
 void __cdecl principia__InsertOrKeepVessel(Plugin* const plugin,
                                            char const* const vessel_guid,
                                            char const* const vessel_name,
@@ -834,6 +887,12 @@ void __cdecl principia__InsertOrKeepVessel(Plugin* const plugin,
   journal::Method<journal::InsertOrKeepVessel> m(
       {plugin, vessel_guid, vessel_name, parent_index, loaded}, {inserted});
   CHECK_NOTNULL(plugin);
+  CHECK(vessel_guid != nullptr)
+      << "name: "
+      << (vessel_name == nullptr ? "null" : std::string_view(vessel_name));
+  CHECK(vessel_name != nullptr)
+      << "guid: "
+      << (vessel_guid == nullptr ? "null" : std::string_view(vessel_guid));
   plugin->InsertOrKeepVessel(vessel_guid,
                              vessel_name,
                              parent_index,
@@ -918,8 +977,8 @@ void __cdecl principia__InsertOrKeepLoadedPart(
   return m.Return();
 }
 
-// Calls |plugin->SetVesselStateOffset| with the arguments given.
-// |plugin| must not be null.  No transfer of ownership.
+// Calls `plugin->SetVesselStateOffset` with the arguments given.
+// `plugin` must not be null.  No transfer of ownership.
 void __cdecl principia__InsertUnloadedPart(Plugin* const plugin,
                                            PartId const part_id,
                                            char const* const name,
@@ -936,7 +995,7 @@ void __cdecl principia__InsertUnloadedPart(Plugin* const plugin,
   return m.Return();
 }
 
-// Exports |LOG(SEVERITY) << text| for fast logging from the C# adapter.
+// Exports `LOG(SEVERITY) << text` for fast logging from the C# adapter.
 // This will always evaluate its argument even if the corresponding log severity
 // is disabled, so it is less efficient than LOG(SEVERITY).
 void __cdecl principia__LogError(char const* const file,
@@ -1045,9 +1104,9 @@ static PushDeserializer* verification_deserializer = nullptr;
 static Plugin const* verification_plugin = nullptr;
 #endif
 
-// |plugin| must not be null.  The caller takes ownership of the result, except
+// `plugin` must not be null.  The caller takes ownership of the result, except
 // when it is null (at the end of the stream).  No transfer of ownership of
-// |*plugin|.  |*serializer| must be null on the first call and must be passed
+// `*plugin`.  `*serializer` must be null on the first call and must be passed
 // unchanged to the successive calls; its ownership is not transferred.
 char const* __cdecl principia__SerializePlugin(
     Plugin const* const plugin,
@@ -1118,7 +1177,7 @@ void __cdecl principia__SetBufferDuration(int const seconds) {
   return m.Return();
 }
 
-// Log messages at a level |<= max_severity| are buffered.
+// Log messages at a level `<= max_severity` are buffered.
 // Log messages at a higher level are flushed immediately.
 void __cdecl principia__SetBufferedLogging(int const max_severity) {
   journal::Method<journal::SetBufferedLogging> m({max_severity});
@@ -1140,11 +1199,11 @@ void __cdecl principia__SetMainBody(Plugin* const plugin, int const index) {
   return m.Return();
 }
 
-// Make it so that all log messages of at least |min_severity| are logged to
+// Make it so that all log messages of at least `min_severity` are logged to
 // stderr (in addition to logging to the usual log file(s)).
 void __cdecl principia__SetStderrLogging(int const min_severity) {
   journal::Method<journal::SetStderrLogging> m({min_severity});
-  // NOTE(egg): We could use |FLAGS_stderrthreshold| instead, the difference
+  // NOTE(egg): We could use `FLAGS_stderrthreshold` instead, the difference
   // seems to be a mutex.
   google::SetStderrLogging(min_severity);
   return m.Return();
@@ -1158,7 +1217,7 @@ void __cdecl principia__SetSuppressedLogging(int const min_severity) {
   return m.Return();
 }
 
-// Show all VLOG(m) messages for |m <= level|.
+// Show all VLOG(m) messages for `m <= level`.
 void __cdecl principia__SetVerboseLogging(int const level) {
   journal::Method<journal::SetVerboseLogging> m({level});
   FLAGS_v = level;
@@ -1181,8 +1240,8 @@ XYZ __cdecl principia__UnmanageableVesselVelocity(Plugin const* const plugin,
       parent_index));
 }
 
-// Calls |plugin->UpdateCelestialHierarchy| with the arguments given.
-// |plugin| must not be null.  No transfer of ownership.
+// Calls `plugin->UpdateCelestialHierarchy` with the arguments given.
+// `plugin` must not be null.  No transfer of ownership.
 void __cdecl principia__UpdateCelestialHierarchy(Plugin const* const plugin,
                                                  int const celestial_index,
                                                  int const parent_index) {

@@ -4,18 +4,20 @@
 #include <vector>
 #include <string>
 
-#include "base/macros.hpp"
 #include "geometry/instant.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/integrators.hpp"
 #include "integrators/methods.hpp"
-#include "integrators/symplectic_partitioned_runge_kutta_integrator.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/integration.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 #include "testing_utilities/statistics.hpp"
 #include "testing_utilities/vanishes_before.hpp"
@@ -173,8 +175,8 @@ std::vector<SimpleHarmonicMotionTestInstance> Instances() {
                    +1.11001485780803930e-13 * Metre,
                    +1.11056996932035190e-13 * Metre / Second,
                    +6.29052365752613700e-13 * Joule),
-          // We test |NewtonDelambreStørmerVerletLeapfrog| both as |ABA| and
-          // |BAB| (sometimes called leapfrog and pseudo-leapfrog) for coverage.
+          // We test `NewtonDelambreStørmerVerletLeapfrog` both as `ABA` and
+          // `BAB` (sometimes called leapfrog and pseudo-leapfrog) for coverage.
           // We test the others as BAB integrators only.
           SPRK_INSTANCE(NewtonDelambreStørmerVerletLeapfrog,
                         ABA,
@@ -361,8 +363,8 @@ std::vector<SimpleHarmonicMotionTestInstance> Instances() {
                    +1.11001485780803930e-13 * Metre,
                    +1.11063935825939100e-13 * Metre / Second,
                    +6.29052365752613700e-13 * Joule),
-          // We test |NewtonDelambreStørmerVerletLeapfrog| both as |ABA| and
-          // |BAB| (sometimes called leapfrog and pseudo-leapfrog) for coverage.
+          // We test `NewtonDelambreStørmerVerletLeapfrog` both as `ABA` and
+          // `BAB` (sometimes called leapfrog and pseudo-leapfrog) for coverage.
           // We test the others as BAB integrators only.
           SPRK_INSTANCE(NewtonDelambreStørmerVerletLeapfrog,
                         ABA,

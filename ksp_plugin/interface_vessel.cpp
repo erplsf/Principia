@@ -4,10 +4,14 @@
 #include <string>
 
 #include "geometry/grassmann.hpp"
+#include "geometry/orthogonal_map.hpp"
+#include "geometry/sign.hpp"
 #include "journal/method.hpp"
-#include "journal/profiles.hpp"
+#include "journal/profiles.hpp"  // 🧙 For generated profiles.
+#include "ksp_plugin/frames.hpp"
 #include "physics/degrees_of_freedom.hpp"
-#include "quantities/quantities.hpp"
+#include "physics/rigid_motion.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -16,6 +20,7 @@ namespace interface {
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_sign;
+using namespace principia::journal::_method;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_rigid_motion;
@@ -29,8 +34,8 @@ XYZ __cdecl principia__VesselBinormal(Plugin const* const plugin,
   return m.Return(ToXYZ(plugin->VesselBinormal(vessel_guid)));
 }
 
-// Calls |plugin->VesselFromParent| with the arguments given.
-// |plugin| must not be null.  No transfer of ownership.
+// Calls `plugin->VesselFromParent` with the arguments given.
+// `plugin` must not be null.  No transfer of ownership.
 QP __cdecl principia__VesselFromParent(Plugin const* const plugin,
                                        int const parent_index,
                                        char const* const vessel_guid) {

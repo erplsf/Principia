@@ -2,15 +2,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 #include "journal/method.hpp"
-#include "journal/profiles.hpp"
+#include "journal/profiles.hpp"  // 🧙 For generated profiles.
 #include "ksp_plugin/identification.hpp"
 #include "ksp_plugin/iterators.hpp"
 
 namespace principia {
 namespace interface {
 
+using namespace principia::journal::_method;
 using namespace principia::ksp_plugin::_identification;
 using namespace principia::ksp_plugin::_iterators;
 
@@ -36,7 +38,7 @@ void __cdecl principia__FutureWaitForVesselToCatchUp(
   VesselSet collided_vessel_set;
   plugin->WaitForVesselToCatchUp(*owned_future, collided_vessel_set);
   *collided_vessels =
-      new TypedIterator<VesselSet>(std::move(collided_vessel_set));
+      new TypedIterator<VesselSet>(std::move(collided_vessel_set), plugin);
   return m.Return();
 }
 

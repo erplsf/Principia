@@ -1,4 +1,4 @@
-// The files containing the tree of of child classes of |Integrator| must be
+// The files containing the tree of of child classes of `Integrator` must be
 // included in the order of inheritance to avoid circular dependencies.  This
 // class will end up being reincluded as part of the implementation of its
 // parent.
@@ -9,14 +9,13 @@
 #define PRINCIPIA_INTEGRATORS_EXPLICIT_RUNGE_KUTTA_INTEGRATOR_HPP_
 
 #include <functional>
-#include <vector>
+#include <memory>
 
 #include "absl/status/status.h"
 #include "base/not_null.hpp"
 #include "base/traits.hpp"
-#include "numerics/fixed_arrays.hpp"
-#include "integrators/methods.hpp"
 #include "integrators/ordinary_differential_equations.hpp"
+#include "numerics/fixed_arrays.hpp"
 #include "quantities/named_quantities.hpp"
 #include "serialization/integrators.pb.h"
 

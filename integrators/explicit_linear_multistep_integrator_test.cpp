@@ -5,19 +5,20 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.hpp"
 #include "geometry/instant.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/integrators.hpp"
+#include "integrators/methods.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
 #include "mathematica/logger.hpp"
-#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
-#include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
-#include "testing_utilities/integration.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 #include "testing_utilities/statistics.hpp"
 
@@ -39,7 +40,7 @@ using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_numerics;
 using namespace principia::testing_utilities::_statistics;
 
-// The execution time is exponential in |step_sizes|.
+// The execution time is exponential in `step_sizes`.
 constexpr int step_sizes = 110;
 constexpr double step_reduction = 1.1;
 
@@ -97,8 +98,8 @@ std::ostream& operator<<(std::ostream& stream,
 }
 
 std::vector<IntegratorTestParam> IntegratorTestParams() {
-  // The |initial_number_of_steps| below were carefully chosen using
-  // Mathematica to only select the domain where |p| and |step| are properly
+  // The `initial_number_of_steps` below were carefully chosen using
+  // Mathematica to only select the domain where `p` and `step` are properly
   // correlated.
   return {PARAM(AdamsBashforthOrder2,
                 10,

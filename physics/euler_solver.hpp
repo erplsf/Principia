@@ -10,6 +10,7 @@
 #include "geometry/rotation.hpp"
 #include "geometry/signature.hpp"
 #include "geometry/space.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/rigid_motion.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
@@ -74,7 +75,7 @@ class EulerSolver {
   AttitudeRotation AttitudeAt(Instant const& time) const;
 
   // The motion of the body at the given time.  The centre of gravity of the
-  // body moves according to |linear_motion|.
+  // body moves according to `linear_motion`.
   RigidMotion<PrincipalAxesFrame, InertialFrame> MotionAt(
       Instant const& time,
       DegreesOfFreedom<InertialFrame> const& linear_motion) const;

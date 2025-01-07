@@ -7,17 +7,17 @@ namespace ksp_plugin_adapter {
 // The Principia config nodes correspond to protocol buffers declared in
 // astronomy.proto.  The scalar (string or double) protobuf fields are string
 // values in a config node, the message fields are config nodes.
-// The |GetUniqueValue|, |GetUniqueNode| extension methods correspond to
+// The `GetUniqueValue`, `GetUniqueNode` extension methods correspond to
 // required fields.
-// The |GetAtMostOneValue|, |GetAtMostNode| extension methods correspond to
+// The `GetAtMostOneValue`, `GetAtMostNode` extension methods correspond to
 // optional fields.  Note that they are also used when a KSP-side default is
 // provided for a required field, e.g. using the stock values as defaults for
 // gravity models.
-// The KSP |GetValues|, |GetNodes| methods should be used directly for repeated
+// The KSP `GetValues`, `GetNodes` methods should be used directly for repeated
 // fields.
 internal static class ConfigNodeExtensions {
   public static ConfigNode GetAtMostOneNode(this ConfigNode node, string name) {
-    var nodes = node.GetNodes(name);
+    ConfigNode[] nodes = node.GetNodes(name);
     if (nodes.Length > 1) {
       Log.Fatal("Duplicate |" + name + "| in node |" + node.name + "|:\n" +
                 node.ToString());
@@ -28,7 +28,7 @@ internal static class ConfigNodeExtensions {
   }
 
   public static ConfigNode GetUniqueNode(this ConfigNode node, string name) {
-    var nodes = node.GetNodes(name);
+    ConfigNode[] nodes = node.GetNodes(name);
     if (nodes.Length > 1) {
       Log.Fatal("Duplicate |" + name + "| in node |" + node.name + "|:\n" +
                 node.ToString());
@@ -40,7 +40,7 @@ internal static class ConfigNodeExtensions {
   }
 
   public static string GetAtMostOneValue(this ConfigNode node, string name) {
-    var values = node.GetValues(name);
+    string[] values = node.GetValues(name);
     if (values.Length > 1) {
       Log.Fatal("Duplicate |" + name + "| in node |" + node.name + "|:\n" +
                 node.ToString());
@@ -51,7 +51,7 @@ internal static class ConfigNodeExtensions {
   }
 
   public static string GetUniqueValue(this ConfigNode node, string name) {
-    var values = node.GetValues(name);
+    string[] values = node.GetValues(name);
     if (values.Length > 1) {
       Log.Fatal("Duplicate |" + name + "| in node |" + node.name + "|:\n" +
                 node.ToString());
@@ -66,7 +66,7 @@ internal static class ConfigNodeExtensions {
 internal static class GameDatabaseExtensions {
   public static ConfigNode GetAtMostOneNode(this GameDatabase database,
                                             string name) {
-    var configs = database.GetConfigs(name);
+    UrlDir.UrlConfig[] configs = database.GetConfigs(name);
     if (configs.Length > 1) {
       Log.Fatal(
           "Duplicate config |" + name + "| (" +
@@ -81,7 +81,7 @@ internal static class GameDatabaseExtensions {
 
   public static ConfigNode GetUniqueNode(this GameDatabase database,
                                          string name) {
-    var configs = database.GetConfigs(name);
+    UrlDir.UrlConfig[] configs = database.GetConfigs(name);
     if (configs.Length > 1) {
       Log.Fatal(
           "Duplicate config |" + name + "| (" +

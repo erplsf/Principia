@@ -2,47 +2,79 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace principia {
 namespace base {
 namespace _cpuid {
 namespace internal {
 
-// See the Intel® 64 and IA-32 Architectures Software Developer’s Manual,
-// Volume 2A, CPUID—CPU Identification.
-
-// Leaf 0.
-std::string CPUVendorIdentificationString();
-
-// Leaf 1.
-// We represent feature flags as EDX + 2³² ECX.
-constexpr std::uint64_t edx_bit = 1;
-constexpr std::uint64_t ecx_bit = edx_bit << 32;
-enum class CPUFeatureFlags : std::uint64_t {
-  // Table 3-11.
-  FPU = edx_bit << 0,    // x87 Floating Point Unit on chip.
-  PSN = edx_bit << 18,   // Processor Serial Number.
-  SSE = edx_bit << 25,   // Streaming SIMD Extensions.
-  SSE2 = edx_bit << 26,  // Streaming SIMD Extensions 2.
-  // Table 3-10.
-  SSE3 = ecx_bit << 0,     // Streaming SIMD Extensions 3.
-  FMA = ecx_bit << 12,     // Fused Multiply Add.
-  SSE4_1 = ecx_bit << 19,  // Streaming SIMD Extensions 4.1.
-  AVX = ecx_bit << 28,     // Advanced Vector eXtensions.
+struct CPUIDResult {
+  std::uint32_t eax;
+  std::uint32_t ebx;
+  std::uint32_t ecx;
+  std::uint32_t edx;
 };
 
-// Bitwise or of feature flags; the result represents the union of all features
-// in |left| and |right|.
-CPUFeatureFlags operator|(CPUFeatureFlags left, CPUFeatureFlags right);
+class CPUIDFeatureFlag {
+ public:
+  CPUIDFeatureFlag(CPUIDFeatureFlag const&) = delete;
 
-// Whether the CPU has all features listed in |flags|.
-bool HasCPUFeatures(CPUFeatureFlags flags);
+  std::string_view name() const;
+  bool IsSet() const;
+
+  static const CPUIDFeatureFlag FPU;       // x87 Floating Point Unit on chip.
+  static const CPUIDFeatureFlag PSN;       // Processor Serial Number.
+  static const CPUIDFeatureFlag SSE;       // Streaming SIMD Extensions.
+  static const CPUIDFeatureFlag SSE2;      // Streaming SIMD Extensions 2.
+  static const CPUIDFeatureFlag SSE3;      // Streaming SIMD Extensions 3.
+
+  static const CPUIDFeatureFlag FMA;          // Fused Multiply Add.
+  static const CPUIDFeatureFlag SSE4_1;       // Streaming SIMD Extensions 4.1.
+  static const CPUIDFeatureFlag AVX;          // Advanced Vector eXtensions.
+  static const CPUIDFeatureFlag AVX2;         // Advanced Vector eXtensions 2.
+  static const CPUIDFeatureFlag AVX512F;      // AVX-512 Foundation.
+  static const CPUIDFeatureFlag AVX512DQ;     // DWORD and QWORD instructions.
+  static const CPUIDFeatureFlag AVX512VL;     // Vector Length Extensions.
+  static const CPUIDFeatureFlag AVX512_FP16;  // IEEE-754 binary16.
+
+ private:
+  CPUIDFeatureFlag(std::string_view const name,
+                   std::uint32_t const leaf,
+                   std::uint32_t const sub_leaf,
+                   std::uint32_t CPUIDResult::*const field,
+                   std::int8_t const bit);
+  CPUIDFeatureFlag(std::string_view const name,
+                   std::uint32_t const leaf,
+                   std::uint32_t CPUIDResult::*const field,
+                   std::int8_t const bit)
+      : CPUIDFeatureFlag(name, leaf, 0, field, bit) {}
+
+  std::string_view name_;
+  std::uint32_t leaf_;
+  std::uint32_t sub_leaf_;
+  std::uint32_t CPUIDResult::*field_;
+  std::int8_t bit_;
+};
+
+constexpr std::uint32_t CPUIDResult::*EAX = &CPUIDResult::eax;
+constexpr std::uint32_t CPUIDResult::*EBX = &CPUIDResult::ebx;
+constexpr std::uint32_t CPUIDResult::*ECX = &CPUIDResult::ecx;
+constexpr std::uint32_t CPUIDResult::*EDX = &CPUIDResult::edx;
+
+std::string CPUVendorIdentificationString();
+std::string ProcessorBrandString();
+
+std::string CPUFeatures();
 
 }  // namespace internal
 
-using internal::CPUFeatureFlags;
+#undef PRINCIPIA_CPUID_FLAG
+
+using internal::CPUFeatures;
+using internal::CPUIDFeatureFlag;
 using internal::CPUVendorIdentificationString;
-using internal::HasCPUFeatures;
+using internal::ProcessorBrandString;
 
 }  // namespace _cpuid
 }  // namespace base

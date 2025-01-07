@@ -1,22 +1,32 @@
+#include "ksp_plugin/plugin.hpp"
+
+#include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "astronomy/time_scales.hpp"
+#include "astronomy/date_time.hpp"
 #include "astronomy/mercury_orbiter.hpp"
-#include "base/array.hpp"
+#include "astronomy/time_scales.hpp"
 #include "base/not_null.hpp"
 #include "base/serialization.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "ksp_plugin/celestial.hpp"
+#include "ksp_plugin/flight_plan.hpp"
 #include "ksp_plugin/frames.hpp"
-#include "ksp_plugin/interface.hpp"
-#include "ksp_plugin/plugin.hpp"
+#include "ksp_plugin/interface.hpp"  // 🧙 For interface functions.
 #include "ksp_plugin_test/plugin_io.hpp"
+#include "numerics/fma.hpp"
+#include "physics/apsides.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/si.hpp"
 #include "serialization/ksp_plugin.pb.h"
+#include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/serialization.hpp"
 #include "testing_utilities/string_log_sink.hpp"
@@ -25,12 +35,16 @@ namespace principia {
 namespace interface {
 
 using ::testing::AllOf;
+using ::testing::Bool;
 using ::testing::ElementsAre;
 using ::testing::Eq;
+using ::testing::Ge;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 using ::testing::Not;
 using ::testing::NotNull;
 using ::testing::Pair;
+using ::testing::ResultOf;
 using ::testing::SizeIs;
 using ::testing::internal::CaptureStderr;
 using ::testing::internal::GetCapturedStderr;
@@ -39,9 +53,13 @@ using namespace principia::astronomy::_mercury_orbiter;
 using namespace principia::astronomy::_time_scales;
 using namespace principia::base::_not_null;
 using namespace principia::base::_serialization;
+using namespace principia::ksp_plugin::_celestial;
+using namespace principia::ksp_plugin::_flight_plan;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::ksp_plugin::_plugin;
-using namespace principia::ksp_plugin::_plugin_io;
+using namespace principia::ksp_plugin_test::_plugin_io;
+using namespace principia::numerics::_fma;
+using namespace principia::physics::_apsides;
 using namespace principia::physics::_discrete_trajectory;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_si;
@@ -68,24 +86,23 @@ class PluginCompatibilityTest : public testing::Test {
 
   static void WriteAndReadBack(
       not_null<std::unique_ptr<Plugin const>> plugin1) {
+    // There may be solidi in the path due to parameterized tests, so we remove
+    // them.
+    std::string const sanitized_name = absl::StrCat(
+        absl::StrReplaceAll(
+            testing::UnitTest::GetInstance()->current_test_info()->name(),
+            {{"/", "__"}}),
+        "_serialized_plugin.proto.b64");
     // Write the plugin to a new file with the preferred format.
-    WritePluginToFile(
-        TEMP_DIR /
-            absl::StrCat(
-                testing::UnitTest::GetInstance()->current_test_info()->name(),
-                "_serialized_plugin.proto.b64"),
-        preferred_compressor,
-        preferred_encoder,
-        std::move(plugin1));
+    WritePluginToFile(TEMP_DIR / sanitized_name,
+                      preferred_compressor,
+                      preferred_encoder,
+                      std::move(plugin1));
 
     // Read the plugin from the new file to make sure that it's fine.
-    auto plugin2 = ReadPluginFromFile(
-        TEMP_DIR /
-            absl::StrCat(
-                testing::UnitTest::GetInstance()->current_test_info()->name(),
-                "_serialized_plugin.proto.b64"),
-        preferred_compressor,
-        preferred_encoder);
+    auto plugin2 = ReadPluginFromFile(TEMP_DIR / sanitized_name,
+                                      preferred_compressor,
+                                      preferred_encoder);
   }
 
   static void CheckSaveCompatibility(std::filesystem::path const& filename,
@@ -120,6 +137,7 @@ TEST_F(PluginCompatibilityTest, PreCohen) {
 }
 
 #if !_DEBUG
+
 TEST_F(PluginCompatibilityTest, Reach) {
   StringLogSink log_warning(google::WARNING);
   not_null<std::unique_ptr<Plugin const>> plugin = ReadPluginFromFile(
@@ -144,24 +162,25 @@ TEST_F(PluginCompatibilityTest, Reach) {
               Eq("1970-08-14T08:47:05"_DateTime));
   ASSERT_TRUE(ifnity->has_flight_plan());
   ifnity->ReadFlightPlanFromMessage();
-  EXPECT_THAT(ifnity->flight_plan()
-                  .adaptive_step_parameters()
-                  .length_integration_tolerance(),
-              Eq(1 * Metre));
-  EXPECT_THAT(ifnity->flight_plan().adaptive_step_parameters().max_steps(),
-              Eq(16'000));
-  EXPECT_THAT(ifnity->flight_plan().number_of_manœuvres(), Eq(16));
+  FlightPlan const& flight_plan = ifnity->flight_plan();
+  EXPECT_THAT(flight_plan.desired_final_time(),
+              ResultOf(&TTSecond, Eq("1980-03-14T09:37:01"_DateTime)));
+  EXPECT_THAT(flight_plan.actual_final_time(),
+              ResultOf(&TTSecond, Eq("1980-03-14T09:37:01"_DateTime)));
+  EXPECT_THAT(
+      flight_plan.adaptive_step_parameters().length_integration_tolerance(),
+      Eq(1 * Metre));
+  EXPECT_THAT(flight_plan.adaptive_step_parameters().max_steps(), Eq(16'000));
+  EXPECT_THAT(flight_plan.number_of_manœuvres(), Eq(16));
   std::vector<std::pair<DateTime, Speed>> manœuvre_ignition_tt_seconds_and_Δvs;
-  for (int i = 0; i < ifnity->flight_plan().number_of_manœuvres(); ++i) {
+  for (int i = 0; i < flight_plan.number_of_manœuvres(); ++i) {
     manœuvre_ignition_tt_seconds_and_Δvs.emplace_back(
-        TTSecond(ifnity->flight_plan().GetManœuvre(i).initial_time()),
-        ifnity->flight_plan().GetManœuvre(i).Δv().Norm());
+        TTSecond(flight_plan.GetManœuvre(i).initial_time()),
+        flight_plan.GetManœuvre(i).Δv().Norm());
   }
   // The flight plan only covers the inner solar system (this is probably
   // because of #3035).
-  // It also differs from https://youtu.be/7BDxZV7UD9I?t=439.
-  // TODO(egg): Compute the flybys and figure out what exactly is going on in
-  // this flight plan.
+  // The manœuvres differ from those in https://youtu.be/7BDxZV7UD9I?t=439.
   EXPECT_THAT(manœuvre_ignition_tt_seconds_and_Δvs,
               ElementsAre(Pair("1970-08-14T09:34:49"_DateTime,
                                3.80488671073918022e+03 * (Metre / Second)),
@@ -195,6 +214,72 @@ TEST_F(PluginCompatibilityTest, Reach) {
                                1.00404183285598275e-03 * (Metre / Second)),
                           Pair("1977-07-28T22:47:53"_DateTime,
                                1.39666705839172456e-01 * (Metre / Second))));
+
+  // Compute the flybys.
+  std::map<Instant, std::string> flyby_map;
+  for (Index index = 0; plugin->HasCelestial(index); ++index) {
+    Celestial const& celestial = plugin->GetCelestial(index);
+    auto const& celestial_trajectory = celestial.trajectory();
+    auto const& flight_plan_trajectory = flight_plan.GetAllSegments();
+    DiscreteTrajectory<Barycentric> apoapsides;
+    DiscreteTrajectory<Barycentric> periapsides;
+
+    // The begin time avoid spurious periapsides right after the launch.
+    ComputeApsides(celestial_trajectory,
+                   flight_plan_trajectory,
+                   flight_plan_trajectory.upper_bound("1970-08-15T00:00:00"_TT),
+                   flight_plan_trajectory.end(),
+                   /*t_max=*/InfiniteFuture,
+                   /*max_points=*/100,
+                   apoapsides,
+                   periapsides);
+    auto const radius = celestial.body()->mean_radius();
+    for (auto const& [time, _] : periapsides) {
+      if ((celestial_trajectory.EvaluatePosition(time) -
+           flight_plan_trajectory.EvaluatePosition(time))
+              .Norm() < 50 * radius) {
+        flyby_map[time] = celestial.body()->name();
+      }
+    }
+  }
+  std::vector<std::pair<Instant, std::string>> flybys(flyby_map.begin(),
+                                                      flyby_map.end());
+
+#if PRINCIPIA_COMPILER_MSVC
+  EXPECT_THAT(
+      flybys,
+      ElementsAre(
+          Pair(ResultOf(&TTSecond, "1970-12-23T07:16:42"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1971-08-29T23:33:54"_DateTime), "Mars"),
+          Pair(ResultOf(&TTSecond, "1972-03-26T11:23:30"_DateTime), "Earth"),
+          Pair(ResultOf(&TTSecond, "1972-03-27T01:02:40"_DateTime), "Moon"),
+          Pair(ResultOf(&TTSecond, "1972-11-02T21:15:50"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1973-06-15T13:17:25"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1974-07-25T22:45:52"_DateTime), "Mercury"),
+          Pair(ResultOf(&TTSecond, "1974-09-05T08:27:45"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1975-04-18T00:42:26"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1976-04-26T17:36:24"_DateTime), "Venus"),
+          Pair(  // The video has             21:57.
+              ResultOf(&TTSecond, "1978-08-07T21:58:49"_DateTime),
+              "Earth"),
+          Pair(  // The video has             07:52.
+              ResultOf(&TTSecond, "1980-02-17T22:18:43"_DateTime),
+              "Jupiter")));
+#elif OS_MACOSX
+  EXPECT_THAT(
+      flybys,
+      ElementsAre(
+          Pair(ResultOf(&TTSecond, "1970-12-23T07:16:42"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1971-08-29T23:34:21"_DateTime), "Mars")));
+#elif OS_LINUX
+  EXPECT_THAT(
+      flybys,
+      ElementsAre(
+          Pair(ResultOf(&TTSecond, "1970-12-23T07:16:42"_DateTime), "Venus"),
+          Pair(ResultOf(&TTSecond, "1971-08-29T23:34:20"_DateTime), "Mars")));
+#else
+#error Unknown OS
+#endif
 
   // Make sure that we can upgrade, save, and reload.
   WriteAndReadBack(std::move(plugin));
@@ -389,7 +474,6 @@ TEST_F(PluginCompatibilityTest, 3273) {
   auto const Ωʹᴛ = analysis.primary()->angular_frequency();
   auto const nd = 2 * π * Radian / analysis.elements()->nodal_period();
   double const κ = nd / (Ωʹᴛ - Ωʹ);
-  LOG(ERROR) << κ;
   EXPECT_THAT(vessel->flight_plan().analysis(2)->recurrence(),
               Eq(std::nullopt));
 }

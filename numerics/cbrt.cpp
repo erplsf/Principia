@@ -8,8 +8,10 @@
 #include <limits>
 #include <utility>
 
+#include "glog/logging.h"
 #include "numerics/double_precision.hpp"
 #include "numerics/fma.hpp"
+#include "numerics/osaca.hpp"  // 🧙 For OSACA_*.
 #include "quantities/elementary_functions.hpp"
 
 namespace principia {
@@ -21,8 +23,28 @@ using namespace principia::numerics::_double_precision;
 using namespace principia::numerics::_fma;
 using namespace principia::quantities::_elementary_functions;
 
+#define OSACA_ANALYSED_FUNCTION Cbrt
+#define OSACA_ANALYSED_FUNCTION_NAMESPACE method_5²Z4¹FMA::
+#define OSACA_ANALYSED_FUNCTION_TEMPLATE_PARAMETERS <Rounding::Correct>
+#define UNDER_OSACA_HYPOTHESES(expression)                                    \
+  [&] {                                                                       \
+    constexpr double y = 3;                                                   \
+    constexpr double abs_y = y == 0 ? 0 : y > 0 ? y : -y;                     \
+    /* Non-constexpr values have to be taken by reference (and must not be */ \
+    /* used). */                                                              \
+    constexpr auto CorrectionPossiblyNeeded = [](double const& r₀,            \
+                                                 double const& r₁,            \
+                                                 double const& r̃,             \
+                                                 double const τ) -> bool {    \
+      return false;                                                           \
+    };                                                                        \
+    return expression;                                                        \
+  }()
+
 // The computations in this file are described in documentation/cbrt.pdf; the
 // identifiers match the notation in that document.
+
+namespace {
 
 // See [Nie04], algorithm 10.
 std::array<double, 4> NievergeltQuadruplyCompensatedStep(
@@ -99,39 +121,7 @@ double CorrectLastBit(double const y, double const r₀, double const r̃) {
   return CbrtOneBit(y, a, b) ? std::max(r₀, r̃) : a;
 }
 
-bool CbrtOneBit(double const y, double const a, double const b) {
-  double const b² = b * b;
-  double const b³ = b² * b;
-  DoublePrecision<double> const a² = TwoProduct(a, a);
-  auto const& [a²₀, a²₁] = a²;
-  DoublePrecision<double> const a³₀ = TwoProduct(a²₀, a);
-  DoublePrecision<double> const minus_a³₁ = TwoProduct(a²₁, -a);
-  auto const& [a³₀₀, a³₀₁] = a³₀;
-  // In cbrt.pdf, where we are specifically considering the computation of the
-  // 54th bit, ρ is referred to as ρ₅₃, and ρ_next as ρ₅₄ˌ₁.
-  // ρ = y - a³ = y - a³₀ - a³₁ = y - a³₀₀ - a³₀₁ - a³₁;
-  double const ρ₀ = y - a³₀₀;  // Exact.
-  // ρ = ρ₀ - a³₀₁ - a³₁;
-  std::array<double, 4> const ρ = PriestNievergeltNormalize(
-      NievergeltQuadruplyCompensatedStep(TwoDifference(ρ₀, a³₀₁), minus_a³₁));
-  DCHECK_EQ(ρ[3], 0);
-  std::array<double, 3> ρ_next{ρ[0], ρ[1], ρ[2]};
-  double const a²₀b = a²₀ * b;
-  double const a²₁b = a²₁ * b;
-  double const ab² = a * b²;
-  for (double rhs : {2 * a²₀b, a²₀b, 2 * a²₁b, a²₁b,  // 3 a²b
-                     2 * ab², ab²,                    // 3 ab²
-                     b³}) {
-    auto const ρ = PriestNievergeltNormalize(NievergeltQuadruplyCompensatedStep(
-        TwoSum(ρ_next[0], ρ_next[1]), TwoDifference(ρ_next[2], rhs)));
-    DCHECK_EQ(ρ[3], 0);
-    ρ_next = {ρ[0], ρ[1], ρ[2]};
-  }
-  bool const ρ_next_positive =
-      ρ_next[0] > 0 || (ρ_next[0] == 0 && ρ_next[1] > 0) ||
-      (ρ_next[0] == 0 && ρ_next[1] == 0 && ρ_next[2] >= 0);
-  return ρ_next_positive;
-}
+}  // namespace
 
 
 namespace masks {
@@ -162,31 +152,32 @@ static_assert(σ₁⁻³ * y₁ == y₂);
 static_assert(σ₂⁻³ * y₂ == y₁);
 
 template<Rounding rounding>
-double Cbrt(double const y) {
+double Cbrt(double y) {
+  OSACA_FUNCTION_BEGIN(y, <rounding>);
   __m128d Y_0 = _mm_set_sd(y);
   __m128d const sign = _mm_and_pd(masks::sign_bit, Y_0);
   Y_0 = _mm_andnot_pd(masks::sign_bit, Y_0);
   double const abs_y = _mm_cvtsd_f64(Y_0);
 
-  if (y != y) {
+  OSACA_IF(y != y) {
     // The usual logic will produce a qNaN when given a NaN, but will not
     // preserve the payload and will signal overflows (q will be a nonsensical
     // large value, and q³ will overflow).  Further, the rescaling comparisons
     // will signal the invalid operation exception for quiet NaNs (although that
     // would be easy to work around using the unordered compare intrinsics).
-    return y + y;
+    OSACA_RETURN(y + y);
   }
 
-  if (abs_y < y₁) {
-    if (abs_y == 0) {
-      return y;
+  OSACA_IF(abs_y < y₁) {
+    OSACA_IF(abs_y == 0) {
+      OSACA_RETURN(y);
     }
     return Cbrt<rounding>(y * σ₁⁻³) * σ₁;
-  } else if (abs_y > y₂) {
+  } OSACA_ELSE_IF(abs_y > y₂) {
     if (abs_y == std::numeric_limits<double>::infinity()) {
-      return y;
+      OSACA_RETURN(y);
     }
-    return Cbrt<rounding>(y * σ₂⁻³) * σ₂;
+    OSACA_RETURN(Cbrt<rounding>(y * σ₂⁻³) * σ₂);
   }
 
   // Step 1.  The constant Γʟ²ᴄ is the result of Canon optimization for step 2.
@@ -226,12 +217,12 @@ double Cbrt(double const y) {
   double const r₁ = x_sign_y - r₀ - Δ;
 
   double const r̃ = r₀ + 2 * r₁;
-  if (rounding == Rounding::Correct &&
-      CorrectionPossiblyNeeded(r₀, r₁, r̃, /*τ=*/0x1.7C73DBBD9FA60p-66)) {
-    return _mm_cvtsd_f64(_mm_or_pd(
-        _mm_set_sd(CorrectLastBit(abs_y, std::abs(r₀), std::abs(r̃))), sign));
+  OSACA_IF(rounding == Rounding::Correct &&
+           CorrectionPossiblyNeeded(r₀, r₁, r̃, /*τ=*/0x1.7C73DBBD9FA60p-66)) {
+    OSACA_RETURN(_mm_cvtsd_f64(_mm_or_pd(
+        _mm_set_sd(CorrectLastBit(abs_y, std::abs(r₀), std::abs(r̃))), sign)));
   }
-  return r₀;
+  OSACA_RETURN(r₀);
 }
 template double Cbrt<Rounding::Faithful>(double y);
 template double Cbrt<Rounding::Correct>(double y);
@@ -256,31 +247,32 @@ static_assert(σ₁⁻³ * std::numeric_limits<double>::denorm_min() > y₁);
 static_assert(σ₂⁻³ * std::numeric_limits<double>::max() < y₂);
 
 template<Rounding rounding>
-double Cbrt(double const y) {
+double Cbrt(double y) {
+  OSACA_FUNCTION_BEGIN(y, <rounding>);
   __m128d Y_0 = _mm_set_sd(y);
   __m128d const sign = _mm_and_pd(masks::sign_bit, Y_0);
   Y_0 = _mm_andnot_pd(masks::sign_bit, Y_0);
   double const abs_y = _mm_cvtsd_f64(Y_0);
 
-  if (y != y) {
+  OSACA_IF(y != y) {
     // The usual logic will produce a qNaN when given a NaN, but will not
     // preserve the payload and will signal overflows (q will be a nonsensical
     // large value, and q³ will overflow).  Further, the rescaling comparisons
     // will signal the invalid operation exception for quiet NaNs (although that
     // would be easy to work around using the unordered compare intrinsics).
-    return y + y;
+    OSACA_RETURN(y + y);
   }
 
-  if (abs_y < y₁) {
-    if (abs_y == 0) {
-      return y;
+  OSACA_IF(abs_y < y₁) {
+    OSACA_IF(abs_y == 0) {
+      OSACA_RETURN(y);
     }
-    return Cbrt<rounding>(y * σ₁⁻³) * σ₁;
-  } else if (abs_y > y₂) {
-    if (abs_y == std::numeric_limits<double>::infinity()) {
-      return y;
+    OSACA_RETURN(Cbrt<rounding>(y * σ₁⁻³) * σ₁);
+  } OSACA_ELSE_IF(abs_y > y₂) {
+    OSACA_IF(abs_y == std::numeric_limits<double>::infinity()) {
+      OSACA_RETURN(y);
     }
-    return Cbrt<rounding>(y * σ₂⁻³) * σ₂;
+    OSACA_RETURN(Cbrt<rounding>(y * σ₂⁻³) * σ₂);
   }
 
   // Step 1.  The constant Γᴋ minimizes the error of q, as in [KB01], rather
@@ -328,12 +320,12 @@ double Cbrt(double const y) {
   double const r₁ = FusedNegatedMultiplyAdd(Δ₁, Δ₂, x_sign_y - r₀);
 
   double const r̃ = r₀ + 2 * r₁;
-  if (rounding == Rounding::Correct &&
-      CorrectionPossiblyNeeded(r₀, r₁, r̃, /*τ=*/0x1.E45E16EF5480Fp-76)) {
-    return _mm_cvtsd_f64(_mm_or_pd(
-        _mm_set_sd(CorrectLastBit(abs_y, std::abs(r₀), std::abs(r̃))), sign));
+  OSACA_IF(rounding == Rounding::Correct &&
+           CorrectionPossiblyNeeded(r₀, r₁, r̃, /*τ=*/0x1.E45E16EF5480Fp-76)) {
+    OSACA_RETURN(_mm_cvtsd_f64(_mm_or_pd(
+        _mm_set_sd(CorrectLastBit(abs_y, std::abs(r₀), std::abs(r̃))), sign)));
   }
-  return r₀;
+  OSACA_RETURN(r₀);
 }
 template double Cbrt<Rounding::Faithful>(double y);
 template double Cbrt<Rounding::Correct>(double y);
@@ -342,6 +334,40 @@ template double Cbrt<Rounding::Correct>(double y);
 double Cbrt(double const y) {
   return UseHardwareFMA ? method_5²Z4¹FMA::Cbrt<Rounding::Correct>(y)
                         : method_3²ᴄZ5¹::Cbrt<Rounding::Correct>(y);
+}
+
+bool CbrtOneBit(double const y, double const a, double const b) {
+  double const b² = b * b;
+  double const b³ = b² * b;
+  DoublePrecision<double> const a² = TwoProduct(a, a);
+  auto const& [a²₀, a²₁] = a²;
+  DoublePrecision<double> const a³₀ = TwoProduct(a²₀, a);
+  DoublePrecision<double> const minus_a³₁ = TwoProduct(a²₁, -a);
+  auto const& [a³₀₀, a³₀₁] = a³₀;
+  // In cbrt.pdf, where we are specifically considering the computation of the
+  // 54th bit, ρ is referred to as ρ₅₃, and ρ_next as ρ₅₄ˌ₁.
+  // ρ = y - a³ = y - a³₀ - a³₁ = y - a³₀₀ - a³₀₁ - a³₁;
+  double const ρ₀ = y - a³₀₀;  // Exact.
+  // ρ = ρ₀ - a³₀₁ - a³₁;
+  std::array<double, 4> const ρ = PriestNievergeltNormalize(
+      NievergeltQuadruplyCompensatedStep(TwoDifference(ρ₀, a³₀₁), minus_a³₁));
+  DCHECK_EQ(ρ[3], 0);
+  std::array<double, 3> ρ_next{ρ[0], ρ[1], ρ[2]};
+  double const a²₀b = a²₀ * b;
+  double const a²₁b = a²₁ * b;
+  double const ab² = a * b²;
+  for (double rhs : {2 * a²₀b, a²₀b, 2 * a²₁b, a²₁b,  // 3 a²b
+                     2 * ab², ab²,                    // 3 ab²
+                     b³}) {
+    auto const ρ = PriestNievergeltNormalize(NievergeltQuadruplyCompensatedStep(
+        TwoSum(ρ_next[0], ρ_next[1]), TwoDifference(ρ_next[2], rhs)));
+    DCHECK_EQ(ρ[3], 0);
+    ρ_next = {ρ[0], ρ[1], ρ[2]};
+  }
+  bool const ρ_next_positive =
+      ρ_next[0] > 0 || (ρ_next[0] == 0 && ρ_next[1] > 0) ||
+      (ρ_next[0] == 0 && ρ_next[1] == 0 && ρ_next[2] >= 0);
+  return ρ_next_positive;
 }
 
 }  // namespace internal

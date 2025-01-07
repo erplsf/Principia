@@ -7,12 +7,14 @@
 
 #include "absl/base/casts.h"
 #include "geometry/instant.hpp"
+#include "geometry/point.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "numerics/combinatorics.hpp"
-#include "numerics/polynomial.hpp"
 #include "numerics/polynomial_evaluators.hpp"
+#include "numerics/polynomial_in_monomial_basis.hpp"
+#include "numerics/scale_b.hpp"
 #include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
@@ -28,8 +30,8 @@ using ::testing::IsEmpty;
 using ::testing::Le;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_point;
-using namespace principia::numerics::_polynomial;
 using namespace principia::numerics::_polynomial_evaluators;
+using namespace principia::numerics::_polynomial_in_monomial_basis;
 using namespace principia::numerics::_root_finders;
 using namespace principia::numerics::_scale_b;
 using namespace principia::quantities::_elementary_functions;
@@ -94,8 +96,7 @@ TEST_F(RootFindersTest, WilkinsGuFunction) {
   double const p = 1.5;
 
   X.push_back(b);
-  int bisections = 0;
-  for (; a < X.back(); ++bisections) {
+  while (a < X.back()) {
     // k is the number of interpolation steps on the interval [a, X.back()]
     // before a bisection happens again.
     int const k = std::round(std::log2((X.back() - a) / δ));
@@ -128,8 +129,8 @@ TEST_F(RootFindersTest, WilkinsGuFunction) {
   // Capture everything but the function itself by copy so we have some
   // confidence that the function is pure.
   // We capture f because it is defined recursively.
-  // If non-null, |*evaluations| is incremented when the function is called.
-  // If |expect_brent_calls| is true, this function checks that x is an element
+  // If non-null, `*evaluations` is incremented when the function is called.
+  // If `expect_brent_calls` is true, this function checks that x is an element
   // of the expected sequence X.
   // For x in X, this function returns f(x) as defined at the end of
   // section 4.2.
@@ -152,7 +153,7 @@ TEST_F(RootFindersTest, WilkinsGuFunction) {
     }
     // [WG13] define f only on X. We extend it as a step function, returning the
     // value for the element of X nearest to the given x.
-    int k;
+    int k = 0;
     double min_Δx = std::numeric_limits<double>::infinity();
     for (int i = 1; i < X.size() - 1; ++i) {
       double const Δx = std::abs(x - X[i]);
@@ -161,6 +162,7 @@ TEST_F(RootFindersTest, WilkinsGuFunction) {
         k = i;
       }
     }
+    CHECK_LE(1, k);
     if (expect_brent_calls) {
       EXPECT_THAT(x, AlmostEquals(X[k], 0)) << k;
     }
@@ -296,7 +298,7 @@ TEST_F(RootFindersTest, SmoothMaximum) {
   // The composition of the 16th degree Taylor series for the cosine with the
   // polynomial x ↦ 3(x-1); this function approximates cos(3(x-1)) near 1, where
   // it has a local maximum.
-  PolynomialInMonomialBasis<double, double, 16, EstrinEvaluatorWithoutFMA> const
+  PolynomialInMonomialBasis<double, double, 16> const
       p({-4059064033.0 / 4100096000,
          759417921.0 / 1793792000,
          3196519569.0 / 717516800,
@@ -313,7 +315,8 @@ TEST_F(RootFindersTest, SmoothMaximum) {
          -19683.0 / 51251200,
          19683.0 / 102502400,
          -59049.0 / 1793792000,
-         59049.0 / 28700672000});
+         59049.0 / 28700672000},
+        with_evaluator<EstrinWithoutFMA>);
   auto const f = [&evaluations, &p](double const x) {
     ++evaluations;
     return p(x);
@@ -466,14 +469,16 @@ TEST_F(RootFindersTest, QuadraticEquations) {
   EXPECT_THAT(s3, ElementsAre(-1.0));
 
   // An ill-conditioned system.  I fart in its general direction.  If done
-  // naively, this yields {-100032., -99968.4} according to Mathematica.
+  // naïvely, the results are -100000.0031'0988855 and -99999.9968'90111535
+  // (separator after the last correct decimal digit), whose error is
+  // approximately 3.5 million ULPs.
   auto const s4 = SolveQuadraticEquation(0.0,
-                                         1.0000001e25,
-                                         2.0000003e20,
-                                         1.0000001e15);
+                                         1.000'000'000'000'001e25,
+                                         2.000'000'000'000'003e20,
+                                         1.000'000'000'000'001e15);
   EXPECT_THAT(s4,
-              ElementsAre(AlmostEquals(-100031.62777541532972762902, 66),
-                          AlmostEquals(-99968.38222458367027247098, 65)));
+              ElementsAre(AlmostEquals(-100000.00316153381194436811, 0),
+                          AlmostEquals(-99999.996838466282967631886, 1)));
 
   // A typed system.
   Instant const t0;

@@ -4,18 +4,19 @@
 #include <limits>
 #include <vector>
 
-#include "base/macros.hpp"
 #include "geometry/instant.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "quantities/elementary_functions.hpp"
+#include "integrators/integrators.hpp"
+#include "integrators/methods.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
-#include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
-#include "testing_utilities/integration.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 #include "testing_utilities/statistics.hpp"
 
@@ -59,7 +60,6 @@ TEST_F(ExplicitRungeKuttaIntegratorTest, Convergence) {
   Mass const initial_mass = 1 * Kilogram;
   SpecificImpulse const specific_impulse = 1 * Newton * Second / Kilogram;
   Instant const t_initial;
-  Instant const t_singular = t_initial + initial_mass / mass_flow;
   // Before the singularity.
   Instant const t_final = t_initial + 0.9 * initial_mass / mass_flow;
   Length const q_initial = 0 * Metre;

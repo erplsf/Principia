@@ -1,4 +1,4 @@
-// The files containing the tree of child classes of |Body| must be included in
+// The files containing the tree of child classes of `Body` must be included in
 // the order of inheritance to avoid circular dependencies.
 #ifndef PRINCIPIA_PHYSICS_ROTATING_BODY_HPP_
 #include "physics/rotating_body.hpp"
@@ -6,10 +6,13 @@
 #ifndef PRINCIPIA_PHYSICS_OBLATE_BODY_HPP_
 #define PRINCIPIA_PHYSICS_OBLATE_BODY_HPP_
 
+#include <memory>
 #include <vector>
 
+#include "base/not_null.hpp"
 #include "geometry/grassmann.hpp"
 #include "numerics/fixed_arrays.hpp"
+#include "physics/massive_body.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 

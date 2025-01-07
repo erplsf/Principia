@@ -1,6 +1,6 @@
 #include "physics/discrete_trajectory.hpp"
 
-#include <string>
+#include <utility>
 #include <vector>
 
 #include "astronomy/time_scales.hpp"
@@ -10,6 +10,9 @@
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/discrete_trajectory_segment.hpp"
+#include "physics/discrete_trajectory_segment_iterator.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
@@ -62,8 +65,8 @@ class DiscreteTrajectoryTest : public ::testing::Test {
                       serialization::Frame::TEST>;
 
 
-  // Constructs a trajectory with three 5-second segments starting at |t0| and
-  // the given |degrees_of_freedom|.
+  // Constructs a trajectory with three 5-second segments starting at `t0` and
+  // the given `degrees_of_freedom`.
   DiscreteTrajectory<World> MakeTrajectory(
       Instant const& t0,
       DegreesOfFreedom<World> const& degrees_of_freedom) {
@@ -841,7 +844,7 @@ TEST_F(DiscreteTrajectoryTest, DISABLED_SerializationPreHamiltonCompatibility) {
   DiscreteTrajectory<World>::SegmentIterator psychohistory;
   auto const history = DiscreteTrajectory<World>::ReadFromMessage(
       message1, /*tracked=*/{&psychohistory});
-  EXPECT_THAT(log_warning.string(),
+  EXPECT_THAT(log_warning.string(),  // NOLINT
               AllOf(HasSubstr("pre-Hamilton"), Not(HasSubstr("pre-Haar"))));
 
   // Note that the sizes don't have the same semantics as pre-Hamilton.  The

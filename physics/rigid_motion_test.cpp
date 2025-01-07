@@ -1,19 +1,23 @@
 #include "physics/rigid_motion.hpp"
 
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
+#include "geometry/orthogonal_map.hpp"
 #include "geometry/permutation.hpp"
+#include "geometry/point.hpp"
 #include "geometry/quaternion.hpp"
 #include "geometry/rotation.hpp"
-#include "geometry/sign.hpp"
 #include "geometry/signature.hpp"
 #include "geometry/space.hpp"
-#include "gmock/gmock.h"
+#include "geometry/space_transformations.hpp"
 #include "gtest/gtest.h"
+#include "physics/degrees_of_freedom.hpp"
 #include "quantities/named_quantities.hpp"
-#include "quantities/numbers.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/physics.pb.h"
 #include "testing_utilities/almost_equals.hpp"
+#include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/componentwise.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/numerics_matchers.hpp"
@@ -29,9 +33,9 @@ using namespace principia::geometry::_permutation;
 using namespace principia::geometry::_point;
 using namespace principia::geometry::_quaternion;
 using namespace principia::geometry::_rotation;
-using namespace principia::geometry::_sign;
 using namespace principia::geometry::_signature;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_rigid_motion;
 using namespace principia::quantities::_named_quantities;

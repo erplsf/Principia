@@ -5,24 +5,22 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
-#include "base/jthread.hpp"
 #include "geometry/sign.hpp"
 #include "glog/logging.h"
-#include "quantities/quantities.hpp"
+#include "numerics/double_precision.hpp"
 
 namespace principia {
 namespace integrators {
 namespace _embedded_explicit_runge_kutta_nyström_integrator {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_sign;
 using namespace principia::numerics::_double_precision;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
 
 template<typename Method, typename ODE_>
 EmbeddedExplicitRungeKuttaNyströmIntegrator<Method, ODE_>::
@@ -61,7 +59,7 @@ Instance::Solve(Instant const& t_final) {
   auto& parameters = this->parameters_;
   auto const& equation = this->equation_;
 
-  // |current_state| gets updated as the integration progresses to allow
+  // `current_state` gets updated as the integration progresses to allow
   // restartability.
 
   // State before the last, truncated step.
@@ -116,9 +114,9 @@ Instance::Solve(Instant const& t_final) {
   double tolerance_to_error_ratio;
 
   // The first stage of the Runge-Kutta-Nyström iteration.  In the FSAL case,
-  // |first_stage == 1| after the first step, since the first RHS evaluation has
+  // `first_stage == 1` after the first step, since the first RHS evaluation has
   // already occurred in the previous step.  In the non-FSAL case and in the
-  // first step of the FSAL case, |first_stage == 0|.
+  // first step of the FSAL case, `first_stage == 0`.
   int first_stage = 0;
 
   // The number of steps already performed.
@@ -128,8 +126,8 @@ Instance::Solve(Instant const& t_final) {
   absl::Status step_status;
 
   // No step size control on the first step.  If this instance is being
-  // restarted we already have a value of |h| suitable for the next step, based
-  // on the computation of |tolerance_to_error_ratio_| during the last
+  // restarted we already have a value of `h` suitable for the next step, based
+  // on the computation of `tolerance_to_error_ratio_` during the last
   // invocation.
   goto runge_kutta_nyström_step;
 
@@ -174,7 +172,7 @@ Instance::Solve(Instant const& t_final) {
 
       auto const h² = h * h;
 
-      // Runge-Kutta-Nyström iteration; fills |g|.
+      // Runge-Kutta-Nyström iteration; fills `g`.
       for (int i = first_stage; i < stages_; ++i) {
         Instant const t_stage =
             (parameters.last_step_is_exact && at_end && c[i] == 1.0)
@@ -187,8 +185,8 @@ Instance::Solve(Instant const& t_final) {
           }
           q_stage[k] = q̂[k].value + h * c[i] * v̂[k].value + h² * Σⱼ_aᵢⱼ_gⱼₖ;
         }
-        termination_condition::UpdateWithAbort(
-            equation.compute_acceleration(t_stage, q_stage, g[i]), step_status);
+        step_status.Update(
+            equation.compute_acceleration(t_stage, q_stage, g[i]));
       }
 
       // Increment computation and step size control.
@@ -238,8 +236,8 @@ Instance::Solve(Instant const& t_final) {
       q̂[k].Increment(Δq̂[k]);
       v̂[k].Increment(Δv̂[k]);
     }
-    RETURN_IF_STOPPED;
     append_state(current_state);
+    RETURN_IF_STOPPED;  // After the state has been updated.
     ++step_count;
     if (step_count == parameters.max_steps && !at_end) {
       return absl::Status(termination_condition::ReachedMaximalStepCount,
@@ -286,7 +284,6 @@ Instance::WriteToMessage(
 }
 
 template<typename Method, typename ODE_>
-template<typename, typename>
 not_null<std::unique_ptr<
     typename EmbeddedExplicitRungeKuttaNyströmIntegrator<Method,
                                                          ODE_>::Instance>>
@@ -301,8 +298,9 @@ ReadFromMessage(
     Parameters const& parameters,
     Time const& time_step,
     bool const first_use,
-    EmbeddedExplicitRungeKuttaNyströmIntegrator const& integrator) {
-  // Cannot use |make_not_null_unique| because the constructor of |Instance| is
+    EmbeddedExplicitRungeKuttaNyströmIntegrator const& integrator)
+  requires serializable<typename ODE_::DependentVariable> {
+  // Cannot use `make_not_null_unique` because the constructor of `Instance` is
   // private.
   return std::unique_ptr<Instance>(new Instance(problem,
                                                 append_state,
@@ -338,7 +336,7 @@ NewInstance(InitialValueProblem<ODE> const& problem,
             AppendState const& append_state,
             ToleranceToErrorRatio const& tolerance_to_error_ratio,
             Parameters const& parameters) const {
-  // Cannot use |make_not_null_unique| because the constructor of |Instance| is
+  // Cannot use `make_not_null_unique` because the constructor of `Instance` is
   // private.
   return std::unique_ptr<Instance>(
       new Instance(problem,

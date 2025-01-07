@@ -5,8 +5,12 @@
 #include <limits>
 #include <vector>
 
+#include "geometry/grassmann.hpp"
 #include "geometry/space.hpp"
+#include "numerics/angle_reduction.hpp"
 #include "physics/apsides.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/si.hpp"
 
 namespace principia {
 namespace astronomy {
@@ -15,17 +19,18 @@ namespace internal {
 
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_space;
+using namespace principia::numerics::_angle_reduction;
 using namespace principia::physics::_apsides;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_si;
 
 // Note that the origin of this celestial longitude is arbitrary: it is not the
-// node of the orbit around the sun (the equinox).  If |PrimaryCentred| is the
+// node of the orbit around the sun (the equinox).  If `PrimaryCentred` is the
 // GCRS, this is the right ascension (with respect to the mean equinox of
 // J2000).
 template<typename PrimaryCentred>
 Angle CelestialLongitude(Position<PrimaryCentred> const& q) {
-  // TODO(egg): |ToSpherical| is wasteful, as we discard the latitude.
+  // TODO(egg): `ToSpherical` is wasteful, as we discard the latitude.
   return (q - PrimaryCentred::origin).coordinates().ToSpherical().longitude;
 }
 
@@ -65,7 +70,7 @@ Interval<Angle> MeanSolarTimesOfNodes(
       mean_solar_time =
           UnwindFrom(*mean_solar_time, MeanSolarTime(node, mean_sun));
     } else {
-      mean_solar_time = Mod(MeanSolarTime(node, mean_sun), 2 * π * Radian);
+      mean_solar_time = ReduceAngle<0, 2 * π>(MeanSolarTime(node, mean_sun));
     }
     mean_solar_times.Include(*mean_solar_time);
   }
@@ -74,7 +79,7 @@ Interval<Angle> MeanSolarTimesOfNodes(
 
 // Returns the interval spanned by the unwound angles
 //   longitudes_of_equatorial_crossings[n] - initial_offset - n * Δλᴇ,
-// where Δλᴇ is |nominal_recurrence.equatorial_shift()|, and the first angle is
+// where Δλᴇ is `nominal_recurrence.equatorial_shift()`, and the first angle is
 // in [0, 2π].
 inline Interval<Angle> ReducedLongitudesOfEquatorialCrossings(
     std::vector<Angle> const& longitudes_of_equatorial_crossings,
@@ -88,7 +93,7 @@ inline Interval<Angle> ReducedLongitudesOfEquatorialCrossings(
         longitude - initial_offset - n * nominal_recurrence.equatorial_shift();
     reduced_longitude = reduced_longitude.has_value()
                             ? UnwindFrom(*reduced_longitude, offset_longitude)
-                            : Mod(offset_longitude, 2 * π * Radian);
+                            : ReduceAngle<0, 2 * π>(offset_longitude);
     reduced_longitudes.Include(*reduced_longitude);
   }
   return reduced_longitudes;
@@ -97,8 +102,8 @@ inline Interval<Angle> ReducedLongitudesOfEquatorialCrossings(
 inline Interval<Angle>
 OrbitGroundTrack::EquatorCrossingLongitudes::longitudes_reduced_to_pass(
     int const pass_index) const {
-  // |shift| applies the number of equatorial shifts corresponding to the pass
-  // number; |reduction| puts the midpoint of the shifted interval in [0, 2π].
+  // `shift` applies the number of equatorial shifts corresponding to the pass
+  // number; `reduction` puts the midpoint of the shifted interval in [0, 2π].
   Angle shift;
   Interval<Angle> longitudes;
   if (pass_index % 2 == 1) {
@@ -130,6 +135,7 @@ absl::StatusOr<OrbitGroundTrack> OrbitGroundTrack::ForTrajectory(
   RETURN_IF_ERROR(ComputeNodes(trajectory,
                                trajectory.begin(),
                                trajectory.end(),
+                               /*t_max=*/InfiniteFuture,
                                Vector<double, PrimaryCentred>({0, 0, 1}),
                                /*max_points=*/std::numeric_limits<int>::max(),
                                ascending_nodes,
@@ -174,7 +180,7 @@ OrbitGroundTrack::equator_crossing_longitudes(
           initial_offset);
   if (first_descending_pass_before_first_ascending_pass_) {
     // Since the first descending pass is before the first ascending pass, using
-    // the same offset in |ReducedLongitudesOfEquatorialCrossings| would compute
+    // the same offset in `ReducedLongitudesOfEquatorialCrossings` would compute
     // the longitude reduced to pass 0; adjust by one equatorial shift to get
     // pass 2.
     initial_offset -= Δλᴇ;

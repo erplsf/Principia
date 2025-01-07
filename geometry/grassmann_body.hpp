@@ -6,6 +6,7 @@
 
 #include "base/not_constructible.hpp"
 #include "geometry/sign.hpp"
+#include "quantities/elementary_functions.hpp"
 
 namespace principia {
 namespace geometry {
@@ -16,125 +17,209 @@ using namespace principia::base::_not_constructible;
 using namespace principia::geometry::_sign;
 using namespace principia::quantities::_elementary_functions;
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Multivector<Scalar, Frame, 1>::Multivector(R3Element<Scalar> const& coordinates)
     : coordinates_(coordinates) {}
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Multivector<Scalar, Frame, 2>::Multivector(R3Element<Scalar> const& coordinates)
     : coordinates_(coordinates) {}
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Multivector<Scalar, Frame, 3>::Multivector(Scalar const& coordinates)
     : coordinates_(coordinates) {}
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 1>& Multivector<Scalar, Frame, 1>::operator+=(
+    Multivector const& right) {
+  coordinates_ += right.coordinates_;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 1>& Multivector<Scalar, Frame, 1>::operator-=(
+    Multivector const& right) {
+  coordinates_ -= right.coordinates_;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 1>& Multivector<Scalar, Frame, 1>::operator*=(
+    double const right) {
+  coordinates_ *= right;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 1>& Multivector<Scalar, Frame, 1>::operator/=(
+    double const right) {
+  coordinates_ /= right;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 2>& Multivector<Scalar, Frame, 2>::operator+=(
+    Multivector const& right) {
+  coordinates_ += right.coordinates_;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 2>& Multivector<Scalar, Frame, 2>::operator-=(
+    Multivector const& right) {
+  coordinates_ -= right.coordinates_;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 2>& Multivector<Scalar, Frame, 2>::operator*=(
+    double const right) {
+  coordinates_ *= right;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 2>& Multivector<Scalar, Frame, 2>::operator/=(
+    double const right) {
+  coordinates_ /= right;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 3>& Multivector<Scalar, Frame, 3>::operator+=(
+    Multivector const& right) {
+  coordinates_ += right.coordinates_;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 3>& Multivector<Scalar, Frame, 3>::operator-=(
+    Multivector const& right) {
+  coordinates_ -= right.coordinates_;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 3>& Multivector<Scalar, Frame, 3>::operator*=(
+    double const right) {
+  coordinates_ *= right;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
+Multivector<Scalar, Frame, 3>& Multivector<Scalar, Frame, 3>::operator/=(
+    double const right) {
+  coordinates_ /= right;
+  return *this;
+}
+
+template<quantity Scalar, typename Frame>
 R3Element<Scalar> const& Multivector<Scalar, Frame, 1>::coordinates() const {
   return coordinates_;
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 R3Element<Scalar> const& Multivector<Scalar, Frame, 2>::coordinates() const {
   return coordinates_;
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Scalar const& Multivector<Scalar, Frame, 3>::coordinates() const {
   return coordinates_;
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Scalar Multivector<Scalar, Frame, 1>::Norm() const {
   return coordinates_.Norm();
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Scalar Multivector<Scalar, Frame, 2>::Norm() const {
   return coordinates_.Norm();
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Scalar Multivector<Scalar, Frame, 3>::Norm() const {
-  // When |Scalar| is double, ADL will not find |Abs|.
+  // When `Scalar` is double, ADL will not find `Abs`.
   return Abs(coordinates_);
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Square<Scalar> Multivector<Scalar, Frame, 1>::Norm²() const {
   return coordinates_.Norm²();
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Square<Scalar> Multivector<Scalar, Frame, 2>::Norm²() const {
   return coordinates_.Norm²();
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 Square<Scalar> Multivector<Scalar, Frame, 3>::Norm²() const {
   return coordinates_ * coordinates_;
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 template<typename S>
 Multivector<Scalar, Frame, 1>
-    Multivector<Scalar, Frame, 1>::OrthogonalizationAgainst(
-        Multivector<S, Frame, 1> const& multivector) const {
+Multivector<Scalar, Frame, 1>::OrthogonalizationAgainst(
+    Multivector<S, Frame, 1> const& multivector) const {
   return Multivector(
       coordinates_.OrthogonalizationAgainst(multivector.coordinates_));
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 template<typename S>
 Multivector<Scalar, Frame, 2>
-    Multivector<Scalar, Frame, 2>::OrthogonalizationAgainst(
-        Multivector<S, Frame, 2> const& multivector) const {
+Multivector<Scalar, Frame, 2>::OrthogonalizationAgainst(
+    Multivector<S, Frame, 2> const& multivector) const {
   return Multivector(
       coordinates_.OrthogonalizationAgainst(multivector.coordinates_));
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 void Multivector<Scalar, Frame, 1>::WriteToMessage(
       not_null<serialization::Multivector*> const message) const {
   Frame::WriteToMessage(message->mutable_frame());
   coordinates_.WriteToMessage(message->mutable_vector());
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 void Multivector<Scalar, Frame, 2>::WriteToMessage(
       not_null<serialization::Multivector*> const message) const {
   Frame::WriteToMessage(message->mutable_frame());
   coordinates_.WriteToMessage(message->mutable_bivector());
 }
 
-template<typename Scalar, typename Frame>
+template<quantity Scalar, typename Frame>
 void Multivector<Scalar, Frame, 3>::WriteToMessage(
       not_null<serialization::Multivector*> const message) const {
   Frame::WriteToMessage(message->mutable_frame());
   coordinates_.WriteToMessage(message->mutable_trivector());
 }
 
-template<typename Scalar, typename Frame>
-template<typename, typename>
+template<quantity Scalar, typename Frame>
 Multivector<Scalar, Frame, 1> Multivector<Scalar, Frame, 1>::ReadFromMessage(
-    serialization::Multivector const& message) {
+    serialization::Multivector const& message)
+  requires serializable<Frame> {
   Frame::ReadFromMessage(message.frame());
   CHECK(message.has_vector());
   return Multivector(R3Element<Scalar>::ReadFromMessage(message.vector()));
 }
 
-template<typename Scalar, typename Frame>
-template<typename, typename>
+template<quantity Scalar, typename Frame>
 Multivector<Scalar, Frame, 2> Multivector<Scalar, Frame, 2>::ReadFromMessage(
-    serialization::Multivector const& message) {
+    serialization::Multivector const& message)
+  requires serializable<Frame> {
   Frame::ReadFromMessage(message.frame());
   CHECK(message.has_bivector());
   return Multivector(R3Element<Scalar>::ReadFromMessage(message.bivector()));
 }
 
-template<typename Scalar, typename Frame>
-template<typename, typename>
+template<quantity Scalar, typename Frame>
 Multivector<Scalar, Frame, 3> Multivector<Scalar, Frame, 3>::ReadFromMessage(
-    serialization::Multivector const& message) {
+    serialization::Multivector const& message)
+  requires serializable<Frame> {
   Frame::ReadFromMessage(message.frame());
   CHECK(message.has_trivector());
   return Multivector(Scalar::ReadFromMessage(message.trivector()));
@@ -340,7 +425,8 @@ Multivector<Scalar, Frame, rank> operator-(
       left.coordinates() - right.coordinates());
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<LScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank>
 operator*(LScalar const& left,
           Multivector<RScalar, Frame, rank> const& right) {
@@ -348,7 +434,8 @@ operator*(LScalar const& left,
       left * right.coordinates());
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<RScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank>
 operator*(Multivector<LScalar, Frame, rank> const& left,
           RScalar const& right) {
@@ -356,7 +443,8 @@ operator*(Multivector<LScalar, Frame, rank> const& left,
       left.coordinates() * right);
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<RScalar>
 Multivector<Quotient<LScalar, RScalar>, Frame, rank>
 operator/(Multivector<LScalar, Frame, rank> const& left,
           RScalar const& right) {
@@ -364,7 +452,8 @@ operator/(Multivector<LScalar, Frame, rank> const& left,
       left.coordinates() / right);
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<RScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplyAdd(
     Multivector<LScalar, Frame, rank> const& a,
     RScalar const& b,
@@ -375,7 +464,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplyAdd(
       FusedMultiplyAdd(a.coordinates(), b, c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<RScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplySubtract(
     Multivector<LScalar, Frame, rank> const& a,
     RScalar const& b,
@@ -386,7 +476,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplySubtract(
       FusedMultiplySubtract(a.coordinates(), b, c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<RScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank> FusedNegatedMultiplyAdd(
     Multivector<LScalar, Frame, rank> const& a,
     RScalar const& b,
@@ -397,7 +488,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> FusedNegatedMultiplyAdd(
       FusedNegatedMultiplyAdd(a.coordinates(), b, c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<RScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank>
 FusedNegatedMultiplySubtract(
     Multivector<LScalar, Frame, rank> const& a,
@@ -409,7 +501,8 @@ FusedNegatedMultiplySubtract(
       FusedNegatedMultiplySubtract(a.coordinates(), b, c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<LScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplyAdd(
     LScalar const& a,
     Multivector<RScalar, Frame, rank> const& b,
@@ -420,7 +513,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplyAdd(
       FusedMultiplyAdd(a, b.coordinates(), c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<LScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplySubtract(
     LScalar const& a,
     Multivector<RScalar, Frame, rank> const& b,
@@ -431,7 +525,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> FusedMultiplySubtract(
       FusedMultiplySubtract(a, b.coordinates(), c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<LScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank> FusedNegatedMultiplyAdd(
     LScalar const& a,
     Multivector<RScalar, Frame, rank> const& b,
@@ -442,7 +537,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> FusedNegatedMultiplyAdd(
       FusedNegatedMultiplyAdd(a, b.coordinates(), c.coordinates()));
 }
 
-template<typename LScalar, typename RScalar, typename Frame, int rank, typename>
+template<typename LScalar, typename RScalar, typename Frame, int rank>
+  requires convertible_to_quantity<LScalar>
 Multivector<Product<LScalar, RScalar>, Frame, rank>
 FusedNegatedMultiplySubtract(
     LScalar const& a,
@@ -455,53 +551,9 @@ FusedNegatedMultiplySubtract(
 }
 
 template<typename Scalar, typename Frame, int rank>
-bool operator==(Multivector<Scalar, Frame, rank> const& left,
-                Multivector<Scalar, Frame, rank> const& right) {
-  return left.coordinates() == right.coordinates();
-}
-
-template<typename Scalar, typename Frame, int rank>
-bool operator!=(Multivector<Scalar, Frame, rank> const& left,
-                Multivector<Scalar, Frame, rank> const& right) {
-  return left.coordinates() != right.coordinates();
-}
-
-template<typename Scalar, typename Frame, int rank>
-Multivector<Scalar, Frame, rank>& operator+=(
-    Multivector<Scalar, Frame, rank>& left,
-    Multivector<Scalar, Frame, rank> const& right) {
-  left.coordinates_ += right.coordinates_;
-  return left;
-}
-
-template<typename Scalar, typename Frame, int rank>
-Multivector<Scalar, Frame, rank>& operator-=(
-    Multivector<Scalar, Frame, rank>& left,
-    Multivector<Scalar, Frame, rank> const& right) {
-  left.coordinates_ -= right.coordinates_;
-  return left;
-}
-
-template<typename Scalar, typename Frame, int rank>
-Multivector<Scalar, Frame, rank>& operator*=(
-    Multivector<Scalar, Frame, rank>& left,
-    double const right) {
-  left.coordinates_ *= right;
-  return left;
-}
-
-template<typename Scalar, typename Frame, int rank>
-Multivector<Scalar, Frame, rank>& operator/=(
-    Multivector<Scalar, Frame, rank>& left,
-    double const right) {
-  left.coordinates_ /= right;
-  return left;
-}
-
-template<typename Scalar, typename Frame, int rank>
 std::string DebugString(Multivector<Scalar, Frame, rank> const& multivector) {
-  // This |using| is required for the |Trivector|, whose |DebugString(Scalar)|
-  // will not be found by ADL if |Scalar| is |double|.
+  // This `using` is required for the `Trivector`, whose `DebugString(Scalar)`
+  // will not be found by ADL if `Scalar` is `double`.
   using quantities::_quantities::DebugString;
   return DebugString(multivector.coordinates());
 }

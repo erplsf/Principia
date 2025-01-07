@@ -1,17 +1,29 @@
 #include "astronomy/standard_product_3.hpp"
 
-#include <algorithm>
 #include <limits>
+#include <memory>
+#include <ostream>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "astronomy/frames.hpp"
+#include "base/not_null.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/embedded_explicit_runge_kutta_nyström_integrator.hpp"
+#include "integrators/methods.hpp"
+#include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "physics/body_surface_reference_frame.hpp"
+#include "physics/continuous_trajectory.hpp"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/discrete_trajectory.hpp"
+#include "physics/ephemeris.hpp"
+#include "physics/rotating_body.hpp"
 #include "physics/solar_system.hpp"
-#include "testing_utilities/componentwise.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "quantities/astronomy.hpp"
+#include "quantities/si.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -42,7 +54,6 @@ using namespace principia::physics::_rotating_body;
 using namespace principia::physics::_solar_system;
 using namespace principia::quantities::_astronomy;
 using namespace principia::quantities::_si;
-using namespace principia::testing_utilities::_componentwise;
 using namespace principia::testing_utilities::_numerics;
 
 class StandardProduct3Test : public ::testing::Test {
@@ -280,7 +291,7 @@ class StandardProduct3DynamicsTest
   // This ephemeris has only one body, an oblate Earth.
   // The lack of third bodies makes it quick to prolong; it is suitable for
   // minimal sanity checking of Earth orbits.
-  // Its |t_min| is the time of the launch of Спутник-1, so it can be used for
+  // Its `t_min` is the time of the launch of Спутник-1, so it can be used for
   // any artificial satellite.
   SolarSystem<ICRS> const solar_system_;
   not_null<std::unique_ptr<Ephemeris<ICRS>>> const ephemeris_;
@@ -381,8 +392,7 @@ TEST_P(StandardProduct3DynamicsTest, PerturbedKeplerian) {
                     Ephemeris<ICRS>::NewtonianMotionEquation>(),
                 std::numeric_limits<std::int64_t>::max(),
                 /*length_integration_tolerance=*/1 * Milli(Metre),
-                /*speed_integration_tolerance=*/1 * Milli(Metre) / Second),
-            /*max_ephemeris_steps=*/std::numeric_limits<std::int64_t>::max()));
+                /*speed_integration_tolerance=*/1 * Milli(Metre) / Second)));
         DegreesOfFreedom<ICRS> actual =
             integrated_arc.back().degrees_of_freedom;
         DegreesOfFreedom<ICRS> expected =

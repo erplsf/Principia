@@ -7,6 +7,7 @@ UNAME_M := $(shell uname -m)
 
 CXX := clang++
 MSBUILD := msbuild
+OSX_DEPLOYMENT_TARGET ?= 10.13
 
 VERSION_TRANSLATION_UNIT := base/version.generated.cc
 
@@ -21,6 +22,7 @@ TOOLS_TRANSLATION_UNITS                 := $(wildcard tools/*.cpp)
 LIBRARY_TRANSLATION_UNITS               := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS) $(BENCHMARK_TRANSLATION_UNITS), $(wildcard */*.cpp))
 ASTRONOMY_LIB_TRANSLATION_UNITS         := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard astronomy/*.cpp))
 BASE_LIB_TRANSLATION_UNITS              := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard base/*.cpp))
+FUNCTIONS_LIB_TRANSLATION_UNITS         := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard functions/*.cpp))
 GEOMETRY_LIB_TRANSLATION_UNITS          := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard geometry/*.cpp))
 JOURNAL_LIB_TRANSLATION_UNITS           := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard journal/*.cpp))
 MATHEMATICA_LIB_TRANSLATION_UNITS       := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard mathematica/*.cpp))
@@ -28,6 +30,7 @@ NUMERICS_LIB_TRANSLATION_UNITS          := $(filter-out $(TEST_OR_FAKE_OR_MOCK_T
 PHYSICS_LIB_TRANSLATION_UNITS           := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard physics/*.cpp))
 PLUGIN_TEST_LIB_TRANSLATION_UNITS       := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard ksp_plugin_test/*.cpp))
 TESTING_UTILITIES_LIB_TRANSLATION_UNITS := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard testing_utilities/*.cpp))
+CORE_MATH_TRANSLATION_UNITS             := $(filter-out $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS), $(wildcard functions/*.cc))
 PROTO_FILES                             := $(wildcard */*.proto)
 PROTO_TRANSLATION_UNITS                 := $(PROTO_FILES:.proto=.pb.cc)
 PROTO_HEADERS                           := $(PROTO_FILES:.proto=.pb.h)
@@ -84,6 +87,7 @@ endif
 LIBS          := $(DEP_DIR)protobuf/src/.libs/libprotobuf.a \
 	$(DEP_DIR)gipfeli/libgipfeli.a \
 	$(ABSL_GROUP_LIBS) \
+	$(DEP_DIR)core-math/libcore-math.a \
 	$(DEP_DIR)zfp/build/lib/libzfp.a \
 	$(DEP_DIR)glog/.libs/libglog.a -lpthread -lc++ -lc++abi
 TEST_INCLUDES := \
@@ -93,19 +97,36 @@ INCLUDES      := -I. -I$(DEP_DIR)glog/src \
 	-I$(DEP_DIR)protobuf/src \
 	-I$(DEP_DIR)gipfeli/include \
 	-I$(DEP_DIR)abseil-cpp \
-	-I$(DEP_DIR)zfp/include
+	-I$(DEP_DIR)core-math/include \
+	-I$(DEP_DIR)zfp/include \
+	-I$(DEP_DIR)config/include \
+	-I$(DEP_DIR)multiprecision/include
 SHARED_ARGS   := \
 	-std=c++20 -stdlib=libc++ -O3 -g                              \
-	-fPIC -fexceptions -ferror-limit=1000 -fno-omit-frame-pointer \
+	--system-header-prefix=serialization/                         \
+	--system-header-prefix=absl/                                  \
+	--system-header-prefix=benchmark/                             \
+	--system-header-prefix=google/                                \
+	--system-header-prefix=glog/                                  \
+	--system-header-prefix=gtest/                                 \
+	--system-header-prefix=gmock/                                 \
+	--system-header-prefix=zfp/                                   \
+	-fPIC                                                         \
+	-fbracket-depth=257                                           \
+	-fexceptions                                                  \
+	-ferror-limit=1000                                            \
+	-ffp-contract=off                                              \
+	-fno-omit-frame-pointer                                       \
 	-fno-char8_t                                                  \
 	-Wall -Wpedantic                                              \
 	-Wno-char-subscripts                                          \
+	-Wno-elaborated-enum-class                                    \
 	-Wno-gnu-anonymous-struct                                     \
 	-Wno-c99-extensions                                           \
 	-Wno-gnu-zero-variadic-macro-arguments                        \
+	-Wno-mathematical-notation-identifier-extension               \
 	-Wno-nested-anon-types                                        \
 	-Wno-unknown-pragmas                                          \
-	-Wno-elaborated-enum-class                                    \
 	-DPROJECT_DIR='std::filesystem::path("$(PROJECT_DIR)")'       \
 	-DSOLUTION_DIR='std::filesystem::path("$(SOLUTION_DIR)")'     \
 	-DTEMP_DIR='std::filesystem::path("/tmp")'                    \
@@ -113,7 +134,7 @@ SHARED_ARGS   := \
 
 ifeq ($(UNAME_S),Linux)
     ifeq ($(UNAME_M),x86_64)
-        SHARED_ARGS += -m64
+        SHARED_ARGS += -m64 -msse4.1
     else
         SHARED_ARGS += -m32
     endif
@@ -127,7 +148,7 @@ ifeq ($(UNAME_S),Darwin)
 			-include "base/macos_filesystem_replacement.hpp"
     LIBS += -framework CoreFoundation
     SHARED_ARGS += \
-			-mmacosx-version-min=10.12 \
+			-mmacosx-version-min=$(OSX_DEPLOYMENT_TARGET) \
 			-arch x86_64 \
 			-D_LIBCPP_STD_VER=20 \
 			-D_LIBCPP_NO_EXCEPTIONS
@@ -191,6 +212,7 @@ $(GENERATED_PROFILES) : $(TOOLS_BIN)
 
 TEST_OR_FAKE_OR_MOCK_OBJECTS  := $(addprefix $(OBJ_DIRECTORY), $(TEST_OR_FAKE_OR_MOCK_TRANSLATION_UNITS:.cpp=.o))
 LIBRARY_OBJECTS               := $(addprefix $(OBJ_DIRECTORY), $(LIBRARY_TRANSLATION_UNITS:.cpp=.o))
+CORE_MATH_OBJECTS             := $(addprefix $(OBJ_DIRECTORY), $(CORE_MATH_TRANSLATION_UNITS:.cc=.o))
 PROTO_OBJECTS                 := $(addprefix $(OBJ_DIRECTORY), $(PROTO_TRANSLATION_UNITS:.cc=.o))
 GMOCK_OBJECTS                 := $(addprefix $(OBJ_DIRECTORY), $(GMOCK_TRANSLATION_UNITS:.cc=.o))
 GMOCK_MAIN_OBJECT             := $(addprefix $(OBJ_DIRECTORY), $(GMOCK_MAIN_TRANSLATION_UNIT:.cc=.o))
@@ -200,6 +222,7 @@ PLUGIN_OBJECTS                := $(addprefix $(OBJ_DIRECTORY), $(PLUGIN_TRANSLAT
 VERSION_OBJECTS               := $(addprefix $(OBJ_DIRECTORY), $(VERSION_TRANSLATION_UNIT:.cc=.o))
 ASTRONOMY_LIB_OBJECTS         := $(addprefix $(OBJ_DIRECTORY), $(ASTRONOMY_LIB_TRANSLATION_UNITS:.cpp=.o)) $(VERSION_OBJECTS)
 BASE_LIB_OBJECTS              := $(addprefix $(OBJ_DIRECTORY), $(BASE_LIB_TRANSLATION_UNITS:.cpp=.o)) $(VERSION_OBJECTS)
+FUNCTIONS_LIB_OBJECTS         := $(addprefix $(OBJ_DIRECTORY), $(FUNCTIONS_LIB_TRANSLATION_UNITS:.cpp=.o)) $(VERSION_OBJECTS)
 GEOMETRY_LIB_OBJECTS          := $(addprefix $(OBJ_DIRECTORY), $(GEOMETRY_LIB_TRANSLATION_UNITS:.cpp=.o)) $(VERSION_OBJECTS)
 JOURNAL_LIB_OBJECTS           := $(addprefix $(OBJ_DIRECTORY), $(JOURNAL_LIB_TRANSLATION_UNITS:.cpp=.o))
 MATHEMATICA_LIB_OBJECTS       := $(addprefix $(OBJ_DIRECTORY), $(MATHEMATICA_LIB_TRANSLATION_UNITS:.cpp=.o))
@@ -230,6 +253,10 @@ $(VERSION_OBJECTS): $(OBJ_DIRECTORY)%.o: %.cc
 	@mkdir -p $(@D)
 	$(CXX) $(COMPILER_OPTIONS) $< -o $@
 
+$(CORE_MATH_OBJECTS): $(OBJ_DIRECTORY)%.o: %.cc
+	@mkdir -p $(@D)
+	$(CXX) $(COMPILER_OPTIONS) $< -o $@
+
 $(PROTO_OBJECTS): $(OBJ_DIRECTORY)%.o: %.cc
 	@mkdir -p $(@D)
 	$(CXX) $(COMPILER_OPTIONS) $< -o $@
@@ -238,7 +265,7 @@ $(PROTO_OBJECTS): $(OBJ_DIRECTORY)%.o: %.cc
 
 ##### tools
 
-$(TOOLS_BIN): $(TOOLS_OBJECTS) $(PROTO_OBJECTS) $(BASE_LIB_OBJECTS) $(NUMERICS_LIB_OBJECTS)
+$(TOOLS_BIN): $(TOOLS_OBJECTS) $(PROTO_OBJECTS) $(BASE_LIB_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CXX) $(LDFLAGS) $^ $(LIBS) -o $@
 
@@ -264,7 +291,7 @@ $(TEST_BINS)          : $(BIN_DIRECTORY)% : $(OBJ_DIRECTORY)%.o
 $(PACKAGE_TEST_BINS)  : $(BIN_DIRECTORY)%test : $$(filter $(OBJ_DIRECTORY)%$$(PERCENT), $(TEST_OBJECTS))
 $(PRINCIPIA_TEST_BIN) : $(TEST_OBJECTS)
 
-$(PLUGIN_INDEPENDENT_PACKAGE_TEST_BINS) $(PLUGIN_INDEPENDENT_TEST_BINS) : $(GMOCK_OBJECTS) $(GMOCK_MAIN_OBJECT) $(PROTO_OBJECTS) $(ASTRONOMY_LIB_OBJECTS) $(MATHEMATICA_LIB_OBJECTS) $(PHYSICS_LIB_OBJECTS) $(BASE_LIB_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS)
+$(PLUGIN_INDEPENDENT_PACKAGE_TEST_BINS) $(PLUGIN_INDEPENDENT_TEST_BINS) : $(GMOCK_OBJECTS) $(GMOCK_MAIN_OBJECT) $(PROTO_OBJECTS) $(ASTRONOMY_LIB_OBJECTS) $(MATHEMATICA_LIB_OBJECTS) $(PHYSICS_LIB_OBJECTS) $(BASE_LIB_OBJECTS) $(FUNCTIONS_LIB_OBJECTS) $(CORE_MATH_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CXX) $(LDFLAGS) $^ $(LIBS) -o $@
 
@@ -273,7 +300,7 @@ $(PLUGIN_INDEPENDENT_PACKAGE_TEST_BINS) $(PLUGIN_INDEPENDENT_TEST_BINS) : $(GMOC
 # NOTE(egg): this assumes that only the plugin-dependent tests need to be linked
 # against mock objects.  The classes further up that are big enough to be mocked
 # are likely to be highly templatized, so this will probably hold for a while.
-$(PRINCIPIA_TEST_BIN) $(PLUGIN_DEPENDENT_PACKAGE_TEST_BINS) $(PLUGIN_DEPENDENT_TEST_BINS) : $(FAKE_OR_MOCK_OBJECTS) $(GMOCK_OBJECTS) $(GMOCK_MAIN_OBJECT) $(KSP_PLUGIN) $(ASTRONOMY_LIB_OBJECTS) $(MATHEMATICA_LIB_OBJECTS) $(PHYSICS_LIB_OBJECTS) $(BASE_LIB_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS) $(PLUGIN_TEST_LIB_OBJECTS) $(TESTING_UTILITIES_LIB_OBJECTS)
+$(PRINCIPIA_TEST_BIN) $(PLUGIN_DEPENDENT_PACKAGE_TEST_BINS) $(PLUGIN_DEPENDENT_TEST_BINS) : $(FAKE_OR_MOCK_OBJECTS) $(GMOCK_OBJECTS) $(GMOCK_MAIN_OBJECT) $(KSP_PLUGIN) $(ASTRONOMY_LIB_OBJECTS) $(MATHEMATICA_LIB_OBJECTS) $(PHYSICS_LIB_OBJECTS) $(BASE_LIB_OBJECTS) $(FUNCTIONS_LIB_OBJECTS) $(CORE_MATH_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS) $(PLUGIN_TEST_LIB_OBJECTS) $(TESTING_UTILITIES_LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CXX) $(LDFLAGS) $^ $(TEST_LIBS) $(LIBS) -lpthread -o $@
 
@@ -301,7 +328,7 @@ PACKAGE_BENCHMARK_TARGET := $(patsubst $(BIN_DIRECTORY)%, %, $(PACKAGE_BENCHMARK
 
 PRINCIPIA_BENCHMARK_BIN := $(BIN_DIRECTORY)benchmark
 
-$(PRINCIPIA_BENCHMARK_BIN) : $(BENCHMARK_OBJECTS) $(FAKE_OR_MOCK_OBJECTS) $(GMOCK_OBJECTS) $(KSP_PLUGIN) $(BASE_LIB_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(PHYSICS_LIB_OBJECTS) $(ASTRONOMY_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS) $(PLUGIN_TEST_LIB_OBJECTS)
+$(PRINCIPIA_BENCHMARK_BIN) : $(BENCHMARK_OBJECTS) $(FAKE_OR_MOCK_OBJECTS) $(GMOCK_OBJECTS) $(KSP_PLUGIN) $(BASE_LIB_OBJECTS) $(FUNCTIONS_LIB_OBJECTS) $(CORE_MATH_OBJECTS) $(NUMERICS_LIB_OBJECTS) $(PHYSICS_LIB_OBJECTS) $(ASTRONOMY_LIB_OBJECTS) $(GEOMETRY_LIB_OBJECTS) $(PLUGIN_TEST_LIB_OBJECTS)
 	@mkdir -p $(@D)
 	$(CXX) $(LDFLAGS) $^ $(TEST_LIBS) -lpthread -o $@
 

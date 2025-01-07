@@ -3,13 +3,12 @@
 #include "physics/oblate_body.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <set>
 #include <vector>
 
 #include "astronomy/epoch.hpp"
 #include "numerics/legendre_normalization_factor.mathematica.h"
-#include "quantities/constants.hpp"
-#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -19,8 +18,6 @@ namespace internal {
 
 using namespace principia::astronomy::_epoch;
 using namespace principia::numerics::_legendre_normalization_factor;
-using namespace principia::physics::_massive_body;
-using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
 template<typename Frame>
@@ -224,7 +221,7 @@ not_null<std::unique_ptr<OblateBody<Frame>>> OblateBody<Frame>::ReadFromMessage(
       break;
     case serialization::OblateBody::OblatenessCase::OBLATENESS_NOT_SET:
       LOG(FATAL) << message.DebugString();
-      base::noreturn();
+      std::abort();
   }
   return std::make_unique<OblateBody<Frame>>(massive_body_parameters,
                                              rotating_body_parameters,

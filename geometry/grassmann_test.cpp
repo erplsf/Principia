@@ -1,22 +1,26 @@
+#include "geometry/grassmann.hpp"
+
 #include <cfloat>
 #include <functional>
 #include <iostream>  // NOLINT(readability/streams)
 #include <utility>
 
+#include "base/cpuid.hpp"
 #include "geometry/frame.hpp"
-#include "geometry/grassmann.hpp"
 #include "geometry/r3_element.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "numerics/fma.hpp"
 #include "quantities/astronomy.hpp"
-#include "quantities/bipm.hpp"
 #include "quantities/constants.hpp"
 #include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "quantities/uk.hpp"
 #include "testing_utilities/algebra.hpp"
 #include "testing_utilities/almost_equals.hpp"
+#include "testing_utilities/check_well_formedness.hpp"  // 🧙 For PRINCIPIA_CHECK_ILL_FORMED.
 
 namespace principia {
 namespace geometry {
@@ -61,12 +65,13 @@ struct TransparentWedge final {
 };
 
 class GrassmannTest : public testing::Test {
- protected:
+ public:
   using World = Frame<serialization::Frame::TestTag,
                       Inertial,
                       Handedness::Right,
                       serialization::Frame::TEST>;
 
+ protected:
   R3Element<Length> const null_displacement_ = {0 * Metre,
                                                 0 * Metre,
                                                 0 * Metre};
@@ -79,7 +84,7 @@ class GrassmannTest : public testing::Test {
 using GrassmannDeathTest = GrassmannTest;
 
 TEST_F(GrassmannTest, VectorFMA) {
-  if (!CanEmitFMAInstructions || !HasCPUFeatures(CPUFeatureFlags::FMA)) {
+  if (!CanEmitFMAInstructions || !CPUIDFeatureFlag::FMA.IsSet()) {
     GTEST_SKIP() << "Cannot test FMA on a machine without FMA";
   }
   Length const a = a_.x;
@@ -98,7 +103,7 @@ TEST_F(GrassmannTest, VectorFMA) {
 }
 
 TEST_F(GrassmannTest, BivectorFMA) {
-  if (!CanEmitFMAInstructions || !HasCPUFeatures(CPUFeatureFlags::FMA)) {
+  if (!CanEmitFMAInstructions || !CPUIDFeatureFlag::FMA.IsSet()) {
     GTEST_SKIP() << "Cannot test FMA on a machine without FMA";
   }
   Length const a = a_.x;
@@ -117,7 +122,7 @@ TEST_F(GrassmannTest, BivectorFMA) {
 }
 
 TEST_F(GrassmannTest, TrivectorFMA) {
-  if (!CanEmitFMAInstructions || !HasCPUFeatures(CPUFeatureFlags::FMA)) {
+  if (!CanEmitFMAInstructions || !CPUIDFeatureFlag::FMA.IsSet()) {
     GTEST_SKIP() << "Cannot test FMA on a machine without FMA";
   }
   Length const a = a_.x;
@@ -287,15 +292,42 @@ TEST_F(GrassmannTest, Normalize) {
   EXPECT_THAT(Normalize(u), Eq(Trivector<double, World>(-1)));
 }
 
-// Uncomment to check that non-serializable frames are detected at compile-time.
-#if 0
-TEST_F(GrassmannTest, SerializationCompilationError) {
-  using F = Frame<struct FrameTag>;
-  Vector<Length, F> v;
-  serialization::Multivector message;
-  v.WriteToMessage(&message);
-}
-#endif
+// Check that non-serializable frames are detected at compile-time.
+
+using F = Frame<struct FrameTag>;
+
+PRINCIPIA_CHECK_WELL_FORMED(
+    v.WriteToMessage(&message),
+    with_variable<Vector<Length, GrassmannTest::World>> v,
+    with_variable<serialization::Multivector> message);
+// TODO(phl): We should refuse to serialize these at compile time; right now
+// only deserialization fails.
+PRINCIPIA_CHECK_WELL_FORMED(v.WriteToMessage(&message),
+                            with_variable<Vector<Length, F>> v,
+                            with_variable<serialization::Multivector> message);
+PRINCIPIA_CHECK_WELL_FORMED(v.WriteToMessage(&message),
+                            with_variable<Bivector<Length, F>> v,
+                            with_variable<serialization::Multivector> message);
+PRINCIPIA_CHECK_WELL_FORMED(v.WriteToMessage(&message),
+                            with_variable<Trivector<Length, F>> v,
+                            with_variable<serialization::Multivector> message);
+
+PRINCIPIA_CHECK_WELL_FORMED_WITH_TYPES(
+    V::ReadFromMessage(message),
+    (typename V = Vector<Length, GrassmannTest::World>),
+    with_variable<serialization::Multivector> message);
+PRINCIPIA_CHECK_ILL_FORMED_WITH_TYPES(
+    V::ReadFromMessage(message),
+    (typename V = Vector<Length, F>),
+    with_variable<serialization::Multivector> message);
+PRINCIPIA_CHECK_ILL_FORMED_WITH_TYPES(
+    V::ReadFromMessage(message),
+    (typename V = Bivector<Length, F>),
+    with_variable<serialization::Multivector> message);
+PRINCIPIA_CHECK_ILL_FORMED_WITH_TYPES(
+    V::ReadFromMessage(message),
+    (typename V = Trivector<Length, F>),
+    with_variable<serialization::Multivector> message);
 
 TEST_F(GrassmannDeathTest, SerializationError) {
   using V = Vector<Length, World>;

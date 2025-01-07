@@ -5,13 +5,16 @@
 
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
+#include "geometry/point.hpp"
 #include "geometry/r3_element.hpp"
 #include "glog/logging.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "numerics/ulp_distance.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
+#include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
 
 namespace principia {
@@ -49,7 +52,7 @@ TEST_F(NumericsTest, ULPs) {
   EXPECT_THAT(ULPDistance(1, 1), Eq(0));
   EXPECT_THAT(ULPDistance(+0.0, +0.0), Eq(0));
   EXPECT_THAT(ULPDistance(+0.0, -0.0), Eq(0));
-  // |std::numeric_limits<double>::min()| is the smallest positive normalized
+  // `std::numeric_limits<double>::min()` is the smallest positive normalized
   // number.  52 bits of mantissa stand between it and 0, in the form of
   // denormals.
   EXPECT_THAT(ULPDistance(+0.0, std::numeric_limits<double>::min()),

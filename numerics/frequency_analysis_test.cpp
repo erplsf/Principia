@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <functional>
+#include <memory>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include "geometry/frame.hpp"
@@ -37,6 +39,7 @@ using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_space;
+using namespace principia::numerics::_apodization;
 using namespace principia::numerics::_fast_fourier_transform;
 using namespace principia::numerics::_frequency_analysis;
 using namespace principia::numerics::_piecewise_poisson_series;
@@ -52,7 +55,7 @@ using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_numerics_matchers;
 
 // Constructs a piecewise Poisson series that has the given number of pieces
-// covering [t_min, t_max] and that matches |series| over that interval.
+// covering [t_min, t_max] and that matches `series` over that interval.
 template<typename Piecewise>
 Piecewise Slice(typename Piecewise::Series const& series,
                 int const pieces,
@@ -73,8 +76,8 @@ class FrequencyAnalysisTest : public ::testing::Test {
                       Handedness::Right,
                       serialization::Frame::TEST>;
 
-  using Series0 = PoissonSeries<Length, 0, 0, HornerEvaluator>;
-  using Series4 = PoissonSeries<Length, 4, 4, HornerEvaluator>;
+  using Series0 = PoissonSeries<Length, 0, 0>;
+  using Series4 = PoissonSeries<Length, 4, 4>;
   using Polynomial4 = Series4::AperiodicPolynomial;
 
   FrequencyAnalysisTest()
@@ -106,8 +109,7 @@ TEST_F(FrequencyAnalysisTest, PreciseModeScalar) {
   std::uniform_real_distribution<> amplitude_distribution(-0.1, 0.1);
   std::uniform_real_distribution<> frequency_distribution(-100.0, 100.0);
 
-  using PiecewiseSeries0 =
-      PiecewisePoissonSeries<Length, 0, 0, HornerEvaluator>;
+  using PiecewiseSeries0 = PiecewisePoissonSeries<Length, 0, 0>;
   using Series0 = PiecewiseSeries0::Series;
   Series0::PolynomialsByAngularFrequency polynomials;
 
@@ -155,7 +157,7 @@ TEST_F(FrequencyAnalysisTest, PreciseModeScalar) {
   auto const precise_mode =
       PreciseMode(mode,
                   piecewise_sin,
-                  _apodization::Hann<HornerEvaluator>(t_min, t_max));
+                  _apodization::Hann(t_min, t_max));
   EXPECT_THAT(precise_mode, RelativeErrorFrom(ω, IsNear(2.6e-8_(1))));
 }
 
@@ -165,7 +167,7 @@ TEST_F(FrequencyAnalysisTest, PreciseModeVector) {
   Time const Δt = 1 * Second;
 
   using PiecewiseSeries0 =
-      PiecewisePoissonSeries<Displacement<World>, 0, 0, HornerEvaluator>;
+      PiecewisePoissonSeries<Displacement<World>, 0, 0>;
   using Series0 = PiecewiseSeries0::Series;
   Series0::PolynomialsByAngularFrequency polynomials;
 
@@ -204,7 +206,7 @@ TEST_F(FrequencyAnalysisTest, PreciseModeVector) {
   auto const precise_mode =
       PreciseMode(mode,
                   piecewise_sin,
-                  _apodization::Hann<HornerEvaluator>(t_min, t_max));
+                  _apodization::Hann(t_min, t_max));
   EXPECT_THAT(precise_mode, RelativeErrorFrom(ω, IsNear(4.2e-11_(1))));
 }
 
@@ -227,7 +229,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesScalarProjection) {
   auto const projection4 =
       Projection<4, 4>(series,
                        ω,
-                       _apodization::Hann<HornerEvaluator>(t_min, t_max),
+                       _apodization::Hann(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(projection4(t_min + i * Radian / ω),
@@ -238,7 +240,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesScalarProjection) {
   auto const projection5 =
       Projection<5, 5>(series,
                        ω,
-                       _apodization::Hann<HornerEvaluator>(t_min, t_max),
+                       _apodization::Hann(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(projection5(t_min + i * Radian / ω),
@@ -249,7 +251,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesScalarProjection) {
   auto const projection3 =
       Projection<3, 3>(series,
                        ω,
-                       _apodization::Hann<HornerEvaluator>(t_min, t_max),
+                       _apodization::Hann(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(projection3(t_min + i * Radian / ω),
@@ -262,8 +264,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesVectorProjection) {
   AngularFrequency const ω = 666.543 * π * Radian / Second;
   std::mt19937_64 random(42);
   std::uniform_real_distribution<> amplitude_distribution(-10.0, 10.0);
-  using VectorSeries4 =
-      PoissonSeries<Vector<Length, World>, 4, 4, HornerEvaluator>;
+  using VectorSeries4 = PoissonSeries<Vector<Length, World>, 4, 4>;
   using Polynomial4 = VectorSeries4::AperiodicPolynomial;
 
   Instant const t_min = t0_;
@@ -307,7 +308,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesVectorProjection) {
   auto const projection4 =
       Projection<4, 4>(series,
                        ω,
-                       _apodization::Hann<HornerEvaluator>(t_min, t_max),
+                       _apodization::Hann(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(projection4(t_min + i * Radian / ω),
@@ -318,7 +319,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesVectorProjection) {
   auto const projection5 =
       Projection<5, 5>(series,
                        ω,
-                       _apodization::Hann<HornerEvaluator>(t_min, t_max),
+                       _apodization::Hann(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(projection5(t_min + i * Radian / ω),
@@ -329,7 +330,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesVectorProjection) {
   auto const projection3 =
       Projection<3, 3>(series,
                        ω,
-                       _apodization::Hann<HornerEvaluator>(t_min, t_max),
+                       _apodization::Hann(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(projection3(t_min + i * Radian / ω),
@@ -348,8 +349,7 @@ TEST_F(FrequencyAnalysisTest, PiecewisePoissonSeriesProjection) {
   Instant const t_mid = t0_ + 5 * Second;
   Instant const t_max = t0_ + 10 * Second;
 
-  using PiecewiseSeries4 =
-      PiecewisePoissonSeries<Length, 4, 4, HornerEvaluator>;
+  using PiecewiseSeries4 = PiecewisePoissonSeries<Length, 4, 4>;
 
   auto const sin = random_polynomial4_(t_mid, random, amplitude_distribution);
   auto const cos = random_polynomial4_(t_mid, random, amplitude_distribution);
@@ -357,7 +357,7 @@ TEST_F(FrequencyAnalysisTest, PiecewisePoissonSeriesProjection) {
       Series4::AperiodicPolynomial({}, t_mid),
       {{ω, Series4::Polynomials{sin, cos}}});
 
-  // Build a series that is based on |series| with different perturbations over
+  // Build a series that is based on `series` with different perturbations over
   // different intervals.
   PiecewiseSeries4 piecewise_series({t_min, t_min + 1 * Second}, series);
   for (int i = 1; i < 10; ++i) {
@@ -377,7 +377,7 @@ TEST_F(FrequencyAnalysisTest, PiecewisePoissonSeriesProjection) {
   auto const projection4 =
       Projection<4, 4>(piecewise_series,
                        ω,
-                       _apodization::Dirichlet<HornerEvaluator>(t_min, t_max),
+                       _apodization::Dirichlet(t_min, t_max),
                        t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(
@@ -450,7 +450,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesIncrementalProjectionNoSecular) {
       IncrementalProjection<4, 4>(
           series.value(),
           angular_frequency_calculator,
-          _apodization::Hann<HornerEvaluator>(t_min, t_max),
+          _apodization::Hann(t_min, t_max),
           t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(
@@ -522,7 +522,7 @@ TEST_F(FrequencyAnalysisTest, PoissonSeriesIncrementalProjectionSecular) {
       IncrementalProjection<4, 4>(
           series,
           angular_frequency_calculator,
-          _apodization::Dirichlet<HornerEvaluator>(t_min, t_max),
+          _apodization::Dirichlet(t_min, t_max),
           t_min, t_max);
   for (int i = 0; i <= 100; ++i) {
     EXPECT_THAT(

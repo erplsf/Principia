@@ -1,40 +1,45 @@
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
 #include "astronomy/epoch.hpp"
 #include "astronomy/frames.hpp"
-#include "base/macros.hpp"
 #include "base/not_null.hpp"
+#include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
-#include "geometry/space_transformations.hpp"
+#include "geometry/orthogonal_map.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "glog/logging.h"
 #include "gtest/gtest.h"
 #include "integrators/methods.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "mathematica/logger.hpp"
+#include "mathematica/mathematica.hpp"
 #include "physics/apsides.hpp"
 #include "physics/body_surface_reference_frame.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "physics/ephemeris.hpp"
 #include "physics/kepler_orbit.hpp"
 #include "physics/massless_body.hpp"
 #include "physics/oblate_body.hpp"
+#include "physics/rigid_motion.hpp"
 #include "physics/solar_system.hpp"
-#include "quantities/astronomy.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/numbers.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
-#include "testing_utilities/statistics.hpp"
 
 namespace principia {
 namespace astronomy {
@@ -47,8 +52,8 @@ using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_orthogonal_map;
-using namespace principia::geometry::_space_transformations;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::integrators::_methods;
 using namespace principia::integrators::_symmetric_linear_multistep_integrator;
 using namespace principia::mathematica::_logger;
@@ -63,7 +68,6 @@ using namespace principia::physics::_massless_body;
 using namespace principia::physics::_oblate_body;
 using namespace principia::physics::_rigid_motion;
 using namespace principia::physics::_solar_system;
-using namespace principia::quantities::_astronomy;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
@@ -72,7 +76,6 @@ using namespace principia::testing_utilities::_almost_equals;
 using namespace principia::testing_utilities::_approximate_quantity;
 using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_numerics;
-using namespace principia::testing_utilities::_statistics;
 
 // A minimum bounding rectangle for a set of values of the eccentricity vector.
 struct EccentricityVectorRange {
@@ -154,11 +157,11 @@ class LunarOrbitTest : public ::testing::TestWithParam<GeopotentialTruncation> {
   // This reference frame is non-rotating, with its origin at the selenocentre.
   // The axes are those of LunarSurface at J2000.
   // Note that this frame is not actually inertial, but we want to use it with
-  // |KeplerOrbit|.  Perhaps we should have a concept of non-rotating, and
-  // |KeplerOrbit| should check that; this is good enough for a test.
+  // `KeplerOrbit`.  Perhaps we should have a concept of non-rotating, and
+  // `KeplerOrbit` should check that; this is good enough for a test.
   using Selenocentric = Frame<struct SelenocentricTag, Inertial>;
 
-  // We do not use a |BodyCentredNonRotatingReferenceFrame| since that would use
+  // We do not use a `BodyCentredNonRotatingReferenceFrame` since that would use
   // ICRS axes.
   RigidMotion<ICRS, Selenocentric> ToSelenocentric(Instant const& t) {
     return RigidMotion<ICRS, Selenocentric>(
@@ -395,6 +398,7 @@ TEST_P(LunarOrbitTest, NearCircularRepeatGroundTrackOrbit) {
   EXPECT_OK(ComputeNodes(surface_trajectory,
                          surface_trajectory.begin(),
                          surface_trajectory.end(),
+                         /*t_max=*/InfiniteFuture,
                          /*north=*/Vector<double, LunarSurface>({0, 0, 1}),
                          /*max_points=*/std::numeric_limits<int>::max(),
                          ascending_nodes,
@@ -406,6 +410,7 @@ TEST_P(LunarOrbitTest, NearCircularRepeatGroundTrackOrbit) {
                  trajectory,
                  trajectory.begin(),
                  trajectory.end(),
+                 /*t_max=*/InfiniteFuture,
                  /*max_points=*/std::numeric_limits<int>::max(),
                  apoapsides,
                  periapsides);

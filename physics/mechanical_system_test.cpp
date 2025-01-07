@@ -1,8 +1,20 @@
 #include "physics/mechanical_system.hpp"
 
+#include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
+#include "geometry/identity.hpp"
+#include "geometry/orthogonal_map.hpp"
+#include "geometry/r3x3_matrix.hpp"
 #include "geometry/space.hpp"
-#include "gmock/gmock.h"
+#include "geometry/space_transformations.hpp"
+#include "geometry/symmetric_bilinear_form.hpp"
 #include "gtest/gtest.h"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/rigid_motion.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/componentwise.hpp"
 
 namespace principia {
@@ -15,6 +27,7 @@ using namespace principia::geometry::_identity;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_r3x3_matrix;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::geometry::_symmetric_bilinear_form;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_mechanical_system;
@@ -70,13 +83,13 @@ TEST_F(MechanicalSystemTest, RigidTwoPointMasses) {
   DegreesOfFreedom<InertialFrame> const unmoving_origin = {
       InertialFrame::origin, InertialFrame::unmoving};
 
-  constexpr double ⅞ = 7.0 / 8;
   EXPECT_THAT(
       system_.LinearMotion()({SystemFrame::origin, SystemFrame::unmoving}) -
           unmoving_origin,
       Componentwise(
-          Componentwise(⅞ * r, 0 * Metre, 0 * Metre),
-          Componentwise(0 * Metre / Second, ⅞ * v, 0 * Metre / Second)));
+          Componentwise(7.0 * r / 8.0, 0 * Metre, 0 * Metre),
+          Componentwise(
+              0 * Metre / Second, 7.0 * v / 8.0, 0 * Metre / Second)));
   EXPECT_THAT(
       system_.AngularMomentum(),
       Componentwise(AngularMomentum{}, AngularMomentum{}, r * μ * v * Radian));
@@ -92,10 +105,10 @@ TEST_F(MechanicalSystemTest, RigidTwoPointMasses) {
   Bivector<double, SystemFrame> const axis = Normalize(L);
   SymmetricBilinearForm<MomentOfInertia, SystemFrame, Bivector> const I =
       system_.InertiaTensor();
-  // Compute the kinetic energy of the system in |InertialFrame| as the energy
+  // Compute the kinetic energy of the system in `InertialFrame` as the energy
   // of its linear motion plus that of its rotational motion, and compare that
   // with sum of the kinetic energies of the point masses.  Note that m1 is
-  // stationary in |InertialFrame|.
+  // stationary in `InertialFrame`.
   EXPECT_THAT(p.Norm²() / (2 * m) + (L / Radian).Norm²() / (2 * I(axis, axis)),
               Eq(0.5 * m2 * Pow<2>(v)));
 }

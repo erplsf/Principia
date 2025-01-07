@@ -9,12 +9,13 @@
 #include <string>
 #include <type_traits>
 
+#include "base/not_constructible.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/point.hpp"
 #include "geometry/r3_element.hpp"
 #include "geometry/serialization.hpp"
+#include "quantities/concepts.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -27,11 +28,9 @@ using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_point;
 using namespace principia::geometry::_r3_element;
 using namespace principia::geometry::_serialization;
-using namespace principia::numerics::_fma;
+using namespace principia::quantities::_concepts;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
-using namespace principia::quantities::_traits;
 
 // A helper to check that the preconditions of QuickTwoSum are met.  Annoyingly
 // complicated as it needs to peel off all of our abstractions until it reaches
@@ -100,42 +99,24 @@ struct ComponentwiseComparator<R3Element<T>, R3Element<U>> : not_constructible {
 };
 
 template<typename T, typename U>
-struct ComponentwiseComparator<T, U,
-                               std::enable_if_t<
-                                   std::conjunction_v<is_quantity<T>,
-                                                      is_quantity<U>>>> {
+  requires convertible_to_quantity<T> && convertible_to_quantity<U>
+struct ComponentwiseComparator<T, U> {
   static bool GreaterThanOrEqualOrZero(T const& left, U const& right) {
-    return Abs(left) >= Abs(right) || left == T{};
+    return Abs(left) >= Abs(right) || left == T{} || !IsFinite(left);
   }
 };
 
 
 template<typename T>
+constexpr DoublePrecision<T>::DoublePrecision() : value{}, error{} {}
+
+template<typename T>
+constexpr DoublePrecision<T>::DoublePrecision(uninitialized_t) {}
+
+template<typename T>
 constexpr DoublePrecision<T>::DoublePrecision(T const& value)
     : value(value),
       error() {}
-
-template <typename T>
-DoublePrecision<T>& DoublePrecision<T>::Decrement(Difference<T> const& right) {
-  // See Higham, Accuracy and Stability of Numerical Algorithms, Algorithm 4.2.
-  // This is equivalent to |QuickTwoSum(value, error - right)|.
-  T const temp = value;
-  Difference<T> const y = error - right;
-  value = temp + y;
-  error = (temp - value) + y;
-  return *this;
-}
-
-template <typename T>
-DoublePrecision<T>& DoublePrecision<T>::Increment(Difference<T> const& right) {
-  // See Higham, Accuracy and Stability of Numerical Algorithms, Algorithm 4.2.
-  // This is equivalent to |QuickTwoSum(value, error + right)|.
-  T const temp = value;
-  Difference<T> const y = error + right;
-  value = temp + y;
-  error = (temp - value) + y;
-  return *this;
-}
 
 template<typename T>
 DoublePrecision<T>& DoublePrecision<T>::operator+=(
@@ -162,6 +143,28 @@ template<typename T>
 DoublePrecision<T>& DoublePrecision<T>::operator-=(
     Difference<T> const& right) {
   *this = *this - DoublePrecision(right);
+  return *this;
+}
+
+template <typename T>
+DoublePrecision<T>& DoublePrecision<T>::Decrement(Difference<T> const& right) {
+  // See Higham, Accuracy and Stability of Numerical Algorithms, Algorithm 4.2.
+  // This is equivalent to `QuickTwoSum(value, error - right)`.
+  T const temp = value;
+  Difference<T> const y = error - right;
+  value = temp + y;
+  error = (temp - value) + y;
+  return *this;
+}
+
+template <typename T>
+DoublePrecision<T>& DoublePrecision<T>::Increment(Difference<T> const& right) {
+  // See Higham, Accuracy and Stability of Numerical Algorithms, Algorithm 4.2.
+  // This is equivalent to `QuickTwoSum(value, error + right)`.
+  T const temp = value;
+  Difference<T> const y = error + right;
+  value = temp + y;
+  error = (temp - value) + y;
   return *this;
 }
 
@@ -202,7 +205,7 @@ DoublePrecision<Product<T, U>> Scale(T const & scale,
     CHECK_EQ(0.5, std::fabs(mantissa)) << scale;
   }
 #endif
-  DoublePrecision<Product<T, U>> result;
+  DoublePrecision<Product<T, U>> result(uninitialized);
   result.value = right.value * scale;
   result.error = right.error * scale;
   return result;
@@ -211,7 +214,7 @@ DoublePrecision<Product<T, U>> Scale(T const & scale,
 template<typename T, typename U>
 constexpr DoublePrecision<Product<T, U>> VeltkampDekkerProduct(T const& a,
                                                                U const& b) {
-  DoublePrecision<Product<T, U>> result;
+  DoublePrecision<Product<T, U>> result(uninitialized);
   auto const& x = a;
   auto const& y = b;
   auto& z = result.value;
@@ -226,6 +229,7 @@ constexpr DoublePrecision<Product<T, U>> VeltkampDekkerProduct(T const& a,
   U const hy = y - py + py;
   U const ty = y - hy;
   // Veltkamp’s 1968 algorithm, as given in [Dek71, p. 234].
+  // See also exactmul in [Lin81, p. 278].
   z = x * y;
   zz = (((hx * hy - z) + hx * ty) + tx * hy) + tx * ty;
   // Dekker’s algorithm (5.12) would be
@@ -238,15 +242,97 @@ constexpr DoublePrecision<Product<T, U>> VeltkampDekkerProduct(T const& a,
   return result;
 }
 
-template<typename T, typename U>
+template<FMAPolicy fma_policy, typename T, typename U>
+FORCE_INLINE(inline)
 DoublePrecision<Product<T, U>> TwoProduct(T const& a, U const& b) {
-  if (UseHardwareFMA) {
+  if ((fma_policy == FMAPolicy::Force && CanEmitFMAInstructions) ||
+      (fma_policy == FMAPolicy::Auto && UseHardwareFMA)) {
     using quantities::_elementary_functions::FusedMultiplySubtract;
-    DoublePrecision<Product<T, U>> result(a * b);
+    DoublePrecision<Product<T, U>> result(uninitialized);
+    result.value = a * b;
     result.error = FusedMultiplySubtract(a, b, result.value);
     return result;
   } else {
     return VeltkampDekkerProduct(a, b);
+  }
+}
+
+template<FMAPolicy fma_policy, typename T, typename U>
+FORCE_INLINE(inline)
+DoublePrecision<Product<T, U>> TwoProductAdd(T const& a,
+                                             U const& b,
+                                             Product<T, U> const& c) {
+  if ((fma_policy == FMAPolicy::Force && CanEmitFMAInstructions) ||
+      (fma_policy == FMAPolicy::Auto && UseHardwareFMA)) {
+    using quantities::_elementary_functions::FusedMultiplyAdd;
+    using quantities::_elementary_functions::FusedMultiplySubtract;
+    DoublePrecision<Product<T, U>> result(uninitialized);
+    result.value = FusedMultiplyAdd(a, b, c);
+    result.error = FusedMultiplySubtract(a, b, result.value - c);
+    return result;
+  } else {
+    auto result = VeltkampDekkerProduct(a, b);
+    result += c;
+    return result;
+  }
+}
+
+template<FMAPolicy fma_policy, typename T, typename U>
+FORCE_INLINE(inline)
+DoublePrecision<Product<T, U>> TwoProductSubtract(T const& a,
+                                                  U const& b,
+                                                  Product<T, U> const& c) {
+  if ((fma_policy == FMAPolicy::Force && CanEmitFMAInstructions) ||
+      (fma_policy == FMAPolicy::Auto && UseHardwareFMA)) {
+    using quantities::_elementary_functions::FusedMultiplySubtract;
+    DoublePrecision<Product<T, U>> result(uninitialized);
+    result.value = FusedMultiplySubtract(a, b, c);
+    result.error = FusedMultiplySubtract(a, b, result.value + c);
+    return result;
+  } else {
+    auto result = VeltkampDekkerProduct(a, b);
+    result -= c;
+    return result;
+  }
+}
+
+template<FMAPolicy fma_policy, typename T, typename U>
+FORCE_INLINE(inline)
+DoublePrecision<Product<T, U>> TwoProductNegatedAdd(T const& a,
+                                                    U const& b,
+                                                    Product<T, U> const& c) {
+  if ((fma_policy == FMAPolicy::Force && CanEmitFMAInstructions) ||
+      (fma_policy == FMAPolicy::Auto && UseHardwareFMA)) {
+    using quantities::_elementary_functions::FusedNegatedMultiplyAdd;
+    using quantities::_elementary_functions::FusedNegatedMultiplySubtract;
+    DoublePrecision<Product<T, U>> result(uninitialized);
+    result.value = FusedNegatedMultiplyAdd(a, b, c);
+    result.error = FusedNegatedMultiplySubtract(a, b, result.value - c);
+    return result;
+  } else {
+    auto result = VeltkampDekkerProduct(-a, b);
+    result += c;
+    return result;
+  }
+}
+
+template<FMAPolicy fma_policy, typename T, typename U>
+FORCE_INLINE(inline)
+DoublePrecision<Product<T, U>>
+TwoProductNegatedSubtract(T const& a,
+                          U const& b,
+                          Product<T, U> const& c) {
+  if ((fma_policy == FMAPolicy::Force && CanEmitFMAInstructions) ||
+      (fma_policy == FMAPolicy::Auto && UseHardwareFMA)) {
+    using quantities::_elementary_functions::FusedNegatedMultiplySubtract;
+    DoublePrecision<Product<T, U>> result(uninitialized);
+    result.value = FusedNegatedMultiplySubtract(a, b, c);
+    result.error = FusedNegatedMultiplySubtract(a, b, result.value + c);
+    return result;
+  } else {
+    auto result = VeltkampDekkerProduct(-a, b);
+    result -= c;
+    return result;
   }
 }
 
@@ -260,7 +346,7 @@ DoublePrecision<Sum<T, U>> QuickTwoSum(T const& a, U const& b) {
       << "|" << DebugString(a) << "| < |" << DebugString(b) << "|";
 #endif
   // [HLB07].
-  DoublePrecision<Sum<T, U>> result;
+  DoublePrecision<Sum<T, U>> result{uninitialized};
   auto& s = result.value;
   auto& e = result.error;
   s = a + b;
@@ -269,9 +355,27 @@ DoublePrecision<Sum<T, U>> QuickTwoSum(T const& a, U const& b) {
 }
 
 template<typename T, typename U>
+FORCE_INLINE(constexpr)
+DoublePrecision<Difference<T, U>> QuickTwoDifference(T const& a, U const& b) {
+#if _DEBUG
+  using quantities::_quantities::DebugString;
+  using Comparator = ComponentwiseComparator<T, U>;
+  CHECK(Comparator::GreaterThanOrEqualOrZero(a, b))
+      << "|" << DebugString(a) << "| < |" << DebugString(b) << "|";
+#endif
+  // [HLB07].
+  DoublePrecision<Sum<T, U>> result{uninitialized};
+  auto& s = result.value;
+  auto& e = result.error;
+  s = a - b;
+  e = (a - s) - b;
+  return result;
+}
+
+template<typename T, typename U>
 constexpr DoublePrecision<Sum<T, U>> TwoSum(T const& a, U const& b) {
   // [HLB07].
-  DoublePrecision<Sum<T, U>> result;
+  DoublePrecision<Sum<T, U>> result{uninitialized};
   auto& s = result.value;
   auto& e = result.error;
   s = a + b;
@@ -288,11 +392,11 @@ constexpr DoublePrecision<Difference<T, U>> TwoDifference(T const& a,
                 "Template metaprogramming went wrong");
   using Point = T;
   using Vector = Difference<T, U>;
-  DoublePrecision<Vector> result;
+  DoublePrecision<Vector> result{uninitialized};
   Vector& s = result.value;
   Vector& e = result.error;
   s = a - b;
-  // Corresponds to -v in |TwoSum|.
+  // Corresponds to -v in `TwoSum`.
   Point const w = a - s;
   e = (a - (s + w)) + (w - b);
   return result;
@@ -303,31 +407,6 @@ template<typename T, typename U, typename>
 constexpr DoublePrecision<Difference<T, U>> TwoDifference(T const& a,
                                                           U const& b) {
   return TwoSum(a, -b);
-}
-
-inline DoublePrecision<Angle> Mod2π(DoublePrecision<Angle> const& θ) {
-  static DoublePrecision<Angle> const two_π = []() {
-    return QuickTwoSum(0x1.921FB54442D18p2 * Radian,
-                       0x1.1A62633145C07p-52 * Radian);
-  }();
-  auto const θ_over_2π = θ / two_π;
-  return θ - two_π * DoublePrecision<double>(static_cast<int>(θ_over_2π.value));
-}
-
-template<typename T>
-bool operator==(DoublePrecision<T> const& left,
-                DoublePrecision<T> const& right) {
-  // This is correct assuming that left and right have non-overlapping
-  // mantissas.
-  return left.value == right.value && left.error == right.error;
-}
-
-template<typename T>
-bool operator!=(DoublePrecision<T> const& left,
-                DoublePrecision<T> const& right) {
-  // This is correct assuming that left and right have non-overlapping
-  // mantissas.
-  return left.value != right.value || left.error != right.error;
 }
 
 template<typename T>
@@ -348,11 +427,43 @@ DoublePrecision<Difference<T>> operator-(DoublePrecision<T> const& left) {
 }
 
 template<typename T, typename U>
+DoublePrecision<Sum<T, U>> operator+(T const& left,
+                                     DoublePrecision<U> const& right) {
+  // [Lin81], algorithm longadd.
+  auto const sum = TwoSum(left, right.value);
+  return QuickTwoSum(sum.value, sum.error + right.error);
+}
+
+template<typename T, typename U>
+DoublePrecision<Sum<T, U>> operator+(DoublePrecision<T> const& left,
+                                     U const& right) {
+  // [Lin81], algorithm longadd.
+  auto const sum = TwoSum(left.value, right);
+  return QuickTwoSum(sum.value, sum.error + left.error);
+}
+
+template<typename T, typename U>
 DoublePrecision<Sum<T, U>> operator+(DoublePrecision<T> const& left,
                                      DoublePrecision<U> const& right) {
   // [Lin81], algorithm longadd.
   auto const sum = TwoSum(left.value, right.value);
   return QuickTwoSum(sum.value, (sum.error + left.error) + right.error);
+}
+
+template<typename T, typename U>
+DoublePrecision<Difference<T, U>> operator-(T const& left,
+                                            DoublePrecision<U> const& right) {
+  // [Lin81], algorithm longadd.
+  auto const sum = TwoDifference(left, right.value);
+  return QuickTwoSum(sum.value, sum.error - right.error);
+}
+
+template<typename T, typename U>
+DoublePrecision<Difference<T, U>> operator-(DoublePrecision<T> const& left,
+                                            U const& right) {
+  // [Lin81], algorithm longadd.
+  auto const sum = TwoDifference(left.value, right);
+  return QuickTwoSum(sum.value, sum.error + left.error);
 }
 
 template<typename T, typename U>
@@ -364,6 +475,27 @@ DoublePrecision<Difference<T, U>> operator-(DoublePrecision<T> const& left,
 }
 
 template<typename T, typename U>
+FORCE_INLINE(inline)
+DoublePrecision<Product<T, U>> operator*(T const& left,
+                                         DoublePrecision<U> const& right) {
+  // [Lin81], algorithm longmul.
+  auto product = TwoProduct(left, right.value);
+  product.error += left * right.error;
+  return QuickTwoSum(product.value, product.error);
+}
+
+template<typename T, typename U>
+FORCE_INLINE(inline)
+DoublePrecision<Product<T, U>> operator*(DoublePrecision<T> const& left,
+                                         U const& right) {
+  // [Lin81], algorithm longmul.
+  auto product = TwoProduct(left.value, right);
+  product.error += +left.error * right;
+  return QuickTwoSum(product.value, product.error);
+}
+
+template<typename T, typename U>
+FORCE_INLINE(inline)
 DoublePrecision<Product<T, U>> operator*(DoublePrecision<T> const& left,
                                          DoublePrecision<U> const& right) {
   // [Lin81], algorithm longmul.
@@ -371,6 +503,28 @@ DoublePrecision<Product<T, U>> operator*(DoublePrecision<T> const& left,
   product.error +=
       (left.value + left.error) * right.error + left.error * right.value;
   return QuickTwoSum(product.value, product.error);
+}
+
+template<typename T, typename U>
+DoublePrecision<Quotient<T, U>> operator/(T const& left,
+                                          DoublePrecision<U> const& right) {
+  // [Lin81], algorithm longdiv.
+  auto const z = left / right.value;
+  auto const product = TwoProduct(right.value, z);
+  auto const zz = (((left - product.value) - product.error) - z * right.error) /
+                  (right.value + right.error);
+  return QuickTwoSum(z, zz);
+}
+
+template<typename T, typename U>
+DoublePrecision<Quotient<T, U>> operator/(DoublePrecision<T> const& left,
+                                          U const& right) {
+  // [Lin81], algorithm longdiv.
+  auto const z = left.value / right;
+  auto const product = TwoProduct(right, z);
+  auto const zz =
+      (((left.value - product.value) - product.error) + left.error) / right;
+  return QuickTwoSum(z, zz);
 }
 
 template<typename T, typename U>
@@ -388,10 +542,10 @@ DoublePrecision<Quotient<T, U>> operator/(DoublePrecision<T> const& left,
 
 template<typename T>
 std::string DebugString(DoublePrecision<T> const& double_precision) {
-  // We use |DebugString| to get all digits when |T| is |double|.  In that case
-  // ADL will not find it, so we need the |using|.  For some values of |T|,
-  // |DebugString| will come from elsewhere, so we cannot directly call
-  // |quantities::Multivector|.
+  // We use `DebugString` to get all digits when `T` is `double`.  In that case
+  // ADL will not find it, so we need the `using`.  For some values of `T`,
+  // `DebugString` will come from elsewhere, so we cannot directly call
+  // `quantities::Multivector`.
   using quantities::_quantities::DebugString;
   return DebugString(double_precision.value) + "|" +
          DebugString(double_precision.error);

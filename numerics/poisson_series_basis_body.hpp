@@ -5,10 +5,7 @@
 #include <algorithm>
 
 #include "geometry/barycentre_calculator.hpp"
-#include "geometry/hilbert.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/si.hpp"
-#include "quantities/traits.hpp"
 
 namespace principia {
 namespace numerics {
@@ -16,13 +13,11 @@ namespace _poisson_series_basis {
 namespace internal {
 
 using namespace principia::geometry::_barycentre_calculator;
-using namespace principia::geometry::_hilbert;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_traits;
 
 
-// A helper to build unit quantities or multivector.  |Coefficient| must be a
-// member of a Hilbert space with |dimension| dimensions, and must be free from
+// A helper to build unit quantities or multivector.  `Coefficient` must be a
+// member of a Hilbert space with `dimension` dimensions, and must be free from
 // Quantity.
 template<typename Coefficient,
          int dimension,
@@ -35,7 +30,7 @@ template<typename Coefficient, int dimension, std::size_t... ds>
 struct CoefficientGenerator<Coefficient,
                             dimension,
                             std::index_sequence<ds...>> {
-  // Returns a unit multivector in the direction given by |d|, for instance,
+  // Returns a unit multivector in the direction given by `d`, for instance,
   // a multivector with coordinates {1, 0, 0}.
   template<int d>
   static Coefficient Unit();
@@ -47,7 +42,7 @@ struct CoefficientGenerator<double,
                             /*dimension=*/1,
                             std::index_sequence<ds...>> {
   // Returns a unit quantity.  This function is templated for consistency with
-  // the preceeding specialization; |d| must be 0.
+  // the preceeding specialization; `d` must be 0.
   template<int d>
   static double Unit();
 };
@@ -70,22 +65,22 @@ double CoefficientGenerator<double,
 }
 
 
-// In the following classes |index| and |indices...| encode the coordinate, the
+// In the following classes `index` and `indices...` encode the coordinate, the
 // degree and the parity (Sin or Cos) of a series.  How this encoding is
 // performed determines the order of the series in the basis.
 
-// A helper to build unit polynomials.  |Polynomial| must be a polynomial with
-// values in a |dimension|-dimensional Hilbert space.
+// A helper to build unit polynomials.  `Polynomial` must be a polynomial with
+// values in a `dimension`-dimensional Hilbert space.
 template<typename Polynomial, int dimension>
 struct PolynomialGenerator {
-  // Returns a polynomial whose coordinate and degree are encoded in |index|.
+  // Returns a polynomial whose coordinate and degree are encoded in `index`.
   template<int index>
   static Polynomial UnitPolynomial(Instant const& t_min,
                                    Instant const& t_mid,
                                    Instant const& t_max);
 
   // Returns a pair of polynomials (for Sin and Cos) whose parity, coordinate
-  // and degree are encoded in |index|.
+  // and degree are encoded in `index`.
   template<typename Polynomials, int index>
   static Polynomials UnitPolynomials(Instant const& t_min,
                                      Instant const& t_mid,
@@ -98,7 +93,7 @@ Polynomial PolynomialGenerator<Polynomial, dimension>::UnitPolynomial(
     Instant const& t_min,
     Instant const& t_mid,
     Instant const& t_max) {
-  // Extract the coordinate and the degree from |index|.  The coordinate varies
+  // Extract the coordinate and the degree from `index`.  The coordinate varies
   // faster, so terms of the same degree but different coordinates are
   // consecutive when this function is called from a template pack expansion.
   static constexpr int coordinate = index % dimension;
@@ -121,7 +116,7 @@ Polynomials PolynomialGenerator<Polynomial, dimension>::UnitPolynomials(
     Instant const& t_min,
     Instant const& t_mid,
     Instant const& t_max) {
-  // Extract the parity, coordinate and the degree from |index|.  The coordinate
+  // Extract the parity, coordinate and the degree from `index`.  The coordinate
   // varies faster, so terms of the same parity and degree but different
   // coordinates are consecutive when this function is called from a template
   // pack expansion.  The parity varies next, so Sin and Cos terms alternate for
@@ -178,7 +173,7 @@ std::array<Series, sizeof...(indices)> AperiodicSeriesGenerator<
     degree, dimension,
     std::index_sequence<indices...>>::BasisElements(Instant const& t_min,
                                                     Instant const& t_max) {
-  Instant const t_mid = Barycentre<Instant, int>({t_min, t_max}, {1, 1});
+  Instant const t_mid = Barycentre({t_min, t_max});
   return {(Series(
       PolynomialGenerator<typename Series::AperiodicPolynomial,
                           dimension>::template UnitPolynomial<indices>(t_min,
@@ -226,7 +221,7 @@ std::array<Series, sizeof...(indices)> PeriodicSeriesGenerator<
     std::index_sequence<indices...>>::BasisElements(AngularFrequency const& ω,
                                                     Instant const& t_min,
                                                     Instant const& t_max) {
-  Instant const t_mid = Barycentre<Instant, int>({t_min, t_max}, {1, 1});
+  Instant const t_mid = Barycentre({t_min, t_max});
   typename Series::AperiodicPolynomial const aperiodic_zero{{}, t_mid};
   return {Series(
       aperiodic_zero,

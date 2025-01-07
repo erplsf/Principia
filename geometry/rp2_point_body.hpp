@@ -6,6 +6,7 @@
 #include <string>
 
 #include "numerics/double_precision.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 
 namespace principia {
@@ -24,7 +25,7 @@ RP2Point<Scalar, Frame>::RP2Point(
   // [0:0:0] does not represent any point but we cannot reject it as it may
   // result from an underflow or a cancellation.
 
-  // Normalize the sign of |z_| so that we return consistently-signed infinities
+  // Normalize the sign of `z_` so that we return consistently-signed infinities
   // in the functions below.
   if (std::signbit(z_)) {
     x_ = -x_;

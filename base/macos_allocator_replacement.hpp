@@ -28,7 +28,7 @@
 #include "absl/container/inlined_vector.h"
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For OS_MACOSX.
 #include "base/malloc_allocator.hpp"
 
 #if !OS_MACOSX
@@ -38,10 +38,11 @@
 namespace principia {
 namespace std {
 
+using namespace principia::base::_malloc_allocator;
 using namespace ::std;
 
 template <typename T>
-using allocator = ::principia::base::_malloc_allocator::MallocAllocator<T>;
+using allocator = MallocAllocator<T>;
 
 template <typename T, typename Allocator = allocator<T>>
 using vector = ::std::vector<T, Allocator>;

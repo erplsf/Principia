@@ -8,39 +8,36 @@
 #include <utility>
 #include <vector>
 
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For forward declarations.
 #include "base/not_null.hpp"
 #include "geometry/complexification.hpp"
 #include "geometry/hilbert.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/interval.hpp"
-#include "numerics/polynomial.hpp"
+#include "numerics/polynomial_in_monomial_basis.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "serialization/numerics.pb.h"
 
 namespace principia {
 namespace numerics {
-FORWARD_DECLARE_FROM(poisson_series,
-                     TEMPLATE(typename Value,
-                              int aperiodic_degree, int periodic_degree,
-                              template<typename, typename, int> class Evaluator)
-                              class,
-                     PoissonSeries);
+FORWARD_DECLARE(
+    TEMPLATE(typename Value,
+             int aperiodic_degree, int periodic_degree) class,
+    PoissonSeries,
+    FROM(poisson_series));
 }  // namespace numerics
 
 namespace mathematica {
-FORWARD_DECLARE_FUNCTION_FROM(
-    mathematica,
+FORWARD_DECLARE_FUNCTION(
     TEMPLATE(typename Value,
              int aperiodic_degree, int periodic_degree,
-             template<typename, typename, int> class Evaluator,
              typename OptionalExpressIn) std::string,
     ToMathematicaBody,
-    (numerics::_poisson_series::PoissonSeries<Value,
-                                              aperiodic_degree, periodic_degree,
-                                              Evaluator> const& series,
-     OptionalExpressIn express_in));
+    (numerics::_poisson_series::PoissonSeries<
+         Value, aperiodic_degree, periodic_degree> const& series,
+     OptionalExpressIn express_in),
+     FROM(mathematica));
 }  // namespace mathematica
 
 namespace numerics {
@@ -52,7 +49,7 @@ using namespace principia::geometry::_complexification;
 using namespace principia::geometry::_hilbert;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_interval;
-using namespace principia::numerics::_polynomial;
+using namespace principia::numerics::_polynomial_in_monomial_basis;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 
@@ -62,17 +59,14 @@ using namespace principia::quantities::_quantities;
 // kind are called periodic.  Poisson series form an algebra that is stable by
 // derivation and integration.
 template<typename Value,
-         int aperiodic_degree_, int periodic_degree_,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_degree_, int periodic_degree_>
 class PoissonSeries {
  public:
   using AperiodicPolynomial =
-      PolynomialInMonomialBasis<Value, Instant, aperiodic_degree_, Evaluator>;
+      PolynomialInMonomialBasis<Value, Instant, aperiodic_degree_>;
   using PeriodicPolynomial =
-      PolynomialInMonomialBasis<Value, Instant, periodic_degree_, Evaluator>;
+      PolynomialInMonomialBasis<Value, Instant, periodic_degree_>;
 
-  // TODO(phl): Use designated initializers for this struct once this project
-  // can be compiled using c++latest.
   // TODO(phl): If we wanted to have Poisson series returning affine values,
   // these polynomials should be changed to return Difference<Value>.
   struct Polynomials {
@@ -83,19 +77,23 @@ class PoissonSeries {
   using PolynomialsByAngularFrequency =
       std::vector<std::pair<AngularFrequency, Polynomials>>;
 
-  // The |periodic| vector may contain frequencies that are negative or zero, as
+  // The `periodic` vector may contain frequencies that are negative or zero, as
   // well as repeated frequencies.  It is not expected to be ordered.
   PoissonSeries(AperiodicPolynomial const& aperiodic,
                 PolynomialsByAngularFrequency const& periodic);
 
-  // A Poisson series may be explicitly converted to a higher degree (possibly
-  // with a different evaluator).
-  template<int higher_aperiodic_degree, int higher_periodic_degree,
-           template<typename, typename, int> class HigherEvaluator>
+  // A Poisson series may be explicitly converted to a higher degree.
+  template<int higher_aperiodic_degree, int higher_periodic_degree>
   explicit operator PoissonSeries<Value,
                                   higher_aperiodic_degree,
-                                  higher_periodic_degree,
-                                  HigherEvaluator>() const;
+                                  higher_periodic_degree>() const;
+
+  template<int aperiodic_rdegree, int periodic_rdegree>
+  PoissonSeries& operator+=(
+      PoissonSeries<Value, aperiodic_rdegree, periodic_rdegree> const& right);
+  template<int aperiodic_rdegree, int periodic_rdegree>
+  PoissonSeries& operator-=(
+      PoissonSeries<Value, aperiodic_rdegree, periodic_rdegree> const& right);
 
   Instant const& origin() const;
   AngularFrequency max_ω() const;
@@ -107,8 +105,7 @@ class PoissonSeries {
 
   // The constant term of the result is zero.
   PoissonSeries<Primitive<Value, Time>,
-                aperiodic_degree_ + 1, periodic_degree_ + 1,
-                Evaluator>
+                aperiodic_degree_ + 1, periodic_degree_ + 1>
   Primitive() const;
 
   quantities::_named_quantities::Primitive<Value, Time> Integrate(
@@ -118,19 +115,9 @@ class PoissonSeries {
   template<int aperiodic_wdegree, int periodic_wdegree>
   typename Hilbert<Value>::NormType Norm(
       PoissonSeries<double,
-                    aperiodic_wdegree, periodic_wdegree,
-                    Evaluator> const& weight,
+                    aperiodic_wdegree, periodic_wdegree> const& weight,
       Instant const& t_min,
       Instant const& t_max) const;
-
-  template<int aperiodic_rdegree, int periodic_rdegree>
-  PoissonSeries& operator+=(PoissonSeries<Value,
-                                          aperiodic_rdegree, periodic_rdegree,
-                                          Evaluator> const& right);
-  template<int aperiodic_rdegree, int periodic_rdegree>
-  PoissonSeries& operator-=(PoissonSeries<Value,
-                                          aperiodic_rdegree, periodic_rdegree,
-                                          Evaluator> const& right);
 
   void WriteToMessage(not_null<serialization::PoissonSeries*> message) const;
   static PoissonSeries ReadFromMessage(
@@ -144,7 +131,7 @@ class PoissonSeries {
                 AperiodicPolynomial aperiodic,
                 PolynomialsByAngularFrequency periodic);
 
-  // Similar to the previous constructor, except that the |periodic| vector is
+  // Similar to the previous constructor, except that the `periodic` vector is
   // used verbatim, without sorting or normalization, which is useful for
   // internal algorithms which produce positive, ordered frequencies.
   struct TrustedPrivateConstructor {};
@@ -166,203 +153,160 @@ class PoissonSeries {
   // order.
   PolynomialsByAngularFrequency periodic_;
 
-  template<typename V, int ar, int pr,
-           template<typename, typename, int> class E>
-  PoissonSeries<V, ar, pr, E>
-  friend operator-(PoissonSeries<V, ar, pr, E> const& right);
-  template<typename V, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
-  PoissonSeries<V, PRINCIPIA_MAX(al, ar), PRINCIPIA_MAX(pl, pr), E>
-  friend operator+(PoissonSeries<V, al, pl, E> const& left,
-                   PoissonSeries<V, ar, pr, E> const& right);
-  template<typename V, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
-  PoissonSeries<V, PRINCIPIA_MAX(al, ar), PRINCIPIA_MAX(pl, pr), E>
-  friend operator-(PoissonSeries<V, al, pl, E> const& left,
-                   PoissonSeries<V, ar, pr, E> const& right);
-  template<typename S, typename V, int ar, int pr,
-           template<typename, typename, int> class E>
-  PoissonSeries<Product<S, V>, ar, pr, E>
+  template<typename V, int ar, int pr>
+  PoissonSeries<V, ar, pr>
+  friend operator-(PoissonSeries<V, ar, pr> const& right);
+  template<typename V, int al, int pl, int ar, int pr>
+  PoissonSeries<V, std::max(al, ar), std::max(pl, pr)>
+  friend operator+(PoissonSeries<V, al, pl> const& left,
+                   PoissonSeries<V, ar, pr> const& right);
+  template<typename V, int al, int pl, int ar, int pr>
+  PoissonSeries<V, std::max(al, ar), std::max(pl, pr)>
+  friend operator-(PoissonSeries<V, al, pl> const& left,
+                   PoissonSeries<V, ar, pr> const& right);
+  template<typename S, typename V, int ar, int pr>
+  PoissonSeries<Product<S, V>, ar, pr>
   friend operator*(S const& left,
-                   PoissonSeries<V, ar, pr, E> const& right);
-  template<typename S, typename V, int al, int pl,
-           template<typename, typename, int> class E>
-  PoissonSeries<Product<V, S>, al, pl, E>
-  friend operator*(PoissonSeries<V, al, pl, E> const& left,
+                   PoissonSeries<V, ar, pr> const& right);
+  template<typename S, typename V, int al, int pl>
+  PoissonSeries<Product<V, S>, al, pl>
+  friend operator*(PoissonSeries<V, al, pl> const& left,
                    S const& right);
-  template<typename S, typename V, int al, int pl,
-           template<typename, typename, int> class E>
-  PoissonSeries<Quotient<V, S>, al, pl, E>
-  friend operator/(PoissonSeries<V, al, pl, E> const& left,
+  template<typename S, typename V, int al, int pl>
+  PoissonSeries<Quotient<V, S>, al, pl>
+  friend operator/(PoissonSeries<V, al, pl> const& left,
                    S const& right);
-  template<typename L, typename R, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E,
-           typename P>
-  auto friend Multiply(PoissonSeries<L, al, pl, E> const& left,
-                       PoissonSeries<R, ar, pr, E> const& right,
+  template<typename L, typename R, int al, int pl, int ar, int pr, typename P>
+  auto friend Multiply(PoissonSeries<L, al, pl> const& left,
+                       PoissonSeries<R, ar, pr> const& right,
                        P const& product);
-  template<typename V, int ad, int pd,
-           template<typename, typename, int> class E>
+  template<typename V, int ad, int pd>
   friend std::ostream& operator<<(std::ostream& out,
-                                  PoissonSeries<V, ad, pd, E> const& series);
+                                  PoissonSeries<V, ad, pd> const& series);
   template<typename L, typename R,
-         int al, int pl, int ar, int pr, int aw, int pw,
-         template<typename, typename, int> class E>
+           int al, int pl, int ar, int pr, int aw, int pw>
   friend typename Hilbert<L, R>::InnerProductType InnerProduct(
-      PoissonSeries<L, al, pl, E> const& left,
-      PoissonSeries<R, ar, pr, E> const& right,
-      PoissonSeries<double, aw, pw, E> const& weight,
+      PoissonSeries<L, al, pl> const& left,
+      PoissonSeries<R, ar, pr> const& right,
+      PoissonSeries<double, aw, pw> const& weight,
       Instant const& t_min,
       Instant const& t_max);
-  template<typename V, int ad, int pd,
-           template<typename, typename, int> class E,
-           typename O>
+  template<typename V, int ad, int pd, typename O>
   friend std::string mathematica::_mathematica::internal::ToMathematicaBody(
-      PoissonSeries<V, ad, pd, E> const& polynomial,
+      PoissonSeries<V, ad, pd> const& polynomial,
       O express_in);
-  template<typename V, int ad, int pd,
-           template<typename, typename, int> class E>
+  template<typename V, int ad, int pd>
   friend class PoissonSeries;
 };
 
 // Vector space of Poisson series.
 
 template<typename Value,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
-PoissonSeries<Value, aperiodic_rdegree, periodic_rdegree, Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
+PoissonSeries<Value, aperiodic_rdegree, periodic_rdegree>
 operator+(PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
-PoissonSeries<Value, aperiodic_rdegree, periodic_rdegree, Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
+PoissonSeries<Value, aperiodic_rdegree, periodic_rdegree>
 operator-(PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PoissonSeries<Value,
-              PRINCIPIA_MAX(aperiodic_ldegree, aperiodic_rdegree),
-              PRINCIPIA_MAX(periodic_ldegree, periodic_rdegree),
-              Evaluator>
+              std::max(aperiodic_ldegree, aperiodic_rdegree),
+              std::max(periodic_ldegree, periodic_rdegree)>
 operator+(PoissonSeries<Value,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
+                        aperiodic_ldegree, periodic_ldegree> const& left,
           PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PoissonSeries<Value,
-              PRINCIPIA_MAX(aperiodic_ldegree, aperiodic_rdegree),
-              PRINCIPIA_MAX(periodic_ldegree, periodic_rdegree),
-              Evaluator>
+              std::max(aperiodic_ldegree, aperiodic_rdegree),
+              std::max(periodic_ldegree, periodic_rdegree)>
 operator-(PoissonSeries<Value,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
+                        aperiodic_ldegree, periodic_ldegree> const& left,
           PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Scalar,
          typename Value,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PoissonSeries<Product<Scalar, Value>,
-              aperiodic_rdegree, periodic_rdegree,
-              Evaluator>
+              aperiodic_rdegree, periodic_rdegree>
 operator*(Scalar const& left,
           PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Scalar,
          typename Value,
-         int aperiodic_ldegree, int periodic_ldegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_ldegree, int periodic_ldegree>
 PoissonSeries<Product<Value, Scalar>,
-              aperiodic_ldegree, periodic_ldegree,
-              Evaluator>
+              aperiodic_ldegree, periodic_ldegree>
 operator*(PoissonSeries<Value,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
+                        aperiodic_ldegree, periodic_ldegree> const& left,
           Scalar const& right);
 
 template<typename Scalar,
          typename Value,
-         int aperiodic_ldegree, int periodic_ldegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_ldegree, int periodic_ldegree>
 PoissonSeries<Quotient<Value, Scalar>,
-              aperiodic_ldegree, periodic_ldegree,
-              Evaluator>
+              aperiodic_ldegree, periodic_ldegree>
 operator/(PoissonSeries<Value,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
+                        aperiodic_ldegree, periodic_ldegree> const& left,
           Scalar const& right);
 
 // Algebra of Poisson series.
 
 template<typename LValue, typename RValue,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PoissonSeries<Product<LValue, RValue>,
-              PRINCIPIA_MAX4(aperiodic_ldegree + aperiodic_rdegree,
-                             aperiodic_ldegree + periodic_rdegree,
-                             periodic_ldegree + aperiodic_rdegree,
-                             periodic_ldegree + periodic_rdegree),
-              PRINCIPIA_MAX3(aperiodic_ldegree + periodic_rdegree,
-                             periodic_ldegree + aperiodic_rdegree,
-                             periodic_ldegree + periodic_rdegree),
-              Evaluator>
+              std::max({aperiodic_ldegree + aperiodic_rdegree,
+                        aperiodic_ldegree + periodic_rdegree,
+                        periodic_ldegree + aperiodic_rdegree,
+                        periodic_ldegree + periodic_rdegree}),
+              std::max({aperiodic_ldegree + periodic_rdegree,
+                        periodic_ldegree + aperiodic_rdegree,
+                        periodic_ldegree + periodic_rdegree})>
 operator*(PoissonSeries<LValue,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
+                        aperiodic_ldegree, periodic_ldegree> const& left,
           PoissonSeries<RValue,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 // Returns a scalar-valued Poisson series obtained by pointwise inner product of
 // two vector-valued series.
 template<typename LValue, typename RValue,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PoissonSeries<typename Hilbert<LValue, RValue>::InnerProductType,
-              PRINCIPIA_MAX4(aperiodic_ldegree + aperiodic_rdegree,
-                             aperiodic_ldegree + periodic_rdegree,
-                             periodic_ldegree + aperiodic_rdegree,
-                             periodic_ldegree + periodic_rdegree),
-              PRINCIPIA_MAX3(aperiodic_ldegree + periodic_rdegree,
-                             periodic_ldegree + aperiodic_rdegree,
-                             periodic_ldegree + periodic_rdegree),
-              Evaluator>
-PointwiseInnerProduct(PoissonSeries<LValue,
-                                    aperiodic_ldegree, periodic_ldegree,
-                                    Evaluator> const& left,
-                      PoissonSeries<RValue,
-                                    aperiodic_rdegree, periodic_rdegree,
-                                    Evaluator> const& right);
+              std::max({aperiodic_ldegree + aperiodic_rdegree,
+                        aperiodic_ldegree + periodic_rdegree,
+                        periodic_ldegree + aperiodic_rdegree,
+                        periodic_ldegree + periodic_rdegree}),
+              std::max({aperiodic_ldegree + periodic_rdegree,
+                        periodic_ldegree + aperiodic_rdegree,
+                        periodic_ldegree + periodic_rdegree})>
+PointwiseInnerProduct(
+    PoissonSeries<LValue,
+                  aperiodic_ldegree, periodic_ldegree> const& left,
+    PoissonSeries<RValue,
+                  aperiodic_rdegree, periodic_rdegree> const& right);
 
 // Output.
 
 template<typename Value,
-         int aperiodic_degree, int periodic_degree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_degree, int periodic_degree>
 std::ostream& operator<<(
     std::ostream& out,
     PoissonSeries<Value,
-                  aperiodic_degree, periodic_degree,
-                  Evaluator> const& series);
+                  aperiodic_degree, periodic_degree> const& series);
 
 // Inner product space of Poisson series.
 
@@ -372,18 +316,14 @@ std::ostream& operator<<(
 template<typename LValue, typename RValue,
          int aperiodic_ldegree, int periodic_ldegree,
          int aperiodic_rdegree, int periodic_rdegree,
-         int aperiodic_wdegree, int periodic_wdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_wdegree, int periodic_wdegree>
 typename Hilbert<LValue, RValue>::InnerProductType
 InnerProduct(PoissonSeries<LValue,
-                           aperiodic_ldegree, periodic_ldegree,
-                           Evaluator> const& left,
+                           aperiodic_ldegree, periodic_ldegree> const& left,
              PoissonSeries<RValue,
-                           aperiodic_rdegree, periodic_rdegree,
-                           Evaluator> const& right,
+                           aperiodic_rdegree, periodic_rdegree> const& right,
              PoissonSeries<double,
-                           aperiodic_wdegree, periodic_wdegree,
-                           Evaluator> const& weight,
+                           aperiodic_wdegree, periodic_wdegree> const& weight,
              Instant const& t_min,
              Instant const& t_max);
 

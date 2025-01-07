@@ -9,31 +9,40 @@ namespace base {
 #define STRINGIFY(X) #X
 #define STRINGIFY_EXPANSION(X) STRINGIFY(X)
 
+#define PRINCIPIA_CONCATENATE_SENTINEL(X) X##0x4C##45##4E##49##54##4E##45##53
+// True if X is #defined to nothing, false if X is #defined to an identifier or
+// is not defined.  This macro should not be used with macros that expand to
+// something other than an identifier.
+#define PRINCIPIA_MACRO_IS_EMPTY(X)                                     \
+    (PRINCIPIA_CONCATENATE_SENTINEL(X) ==                               \
+     ('S' << 000 | 'E' << 010 | 'N' << 020 | 'T' << 030 | 'I' << 040 |  \
+      'N' << 050 | 'E' << 060 | 'L' << 070))
+
 // See http://goo.gl/2EVxN4 for a partial overview of compiler detection and
-// version macros.  We cannot use |COMPILER_MSVC| because it conflicts with
-// a macro in the benchmark library, so the macros have obnoxiously long names.
-// TODO(phl): See whether that |COMPILER_MSVC| macro can be removed from port.h.
+// version macros.
 #if defined(_MSC_VER) && defined(__clang__)
 #define PRINCIPIA_COMPILER_CLANG_CL 1
+#define PRINCIPIA_VECTORCALL
 char const* const CompilerName = "Clang-cl";
 char const* const CompilerVersion = __VERSION__;
 #elif defined(__clang__)
 #define PRINCIPIA_COMPILER_CLANG 1
+#define PRINCIPIA_VECTORCALL
 char const* const CompilerName = "Clang";
 char const* const CompilerVersion = __VERSION__;
 #elif defined(_MSC_VER)
+#define PRINCIPIA_VECTORCALL __vectorcall
 #define PRINCIPIA_COMPILER_MSVC 1
 char const* const CompilerName = "Microsoft Visual C++";
 char const* const CompilerVersion = STRINGIFY_EXPANSION(_MSC_FULL_VER);
-# if _HAS_CXX20
-# define PRINCIPIA_COMPILER_MSVC_HAS_CXX20 1
-# endif
 #elif defined(__ICC) || defined(__INTEL_COMPILER)
 #define PRINCIPIA_COMPILER_ICC 1
+#define PRINCIPIA_VECTORCALL
 char const* const CompilerName = "Intel C++ Compiler";
 char const* const CompilerVersion = __VERSION__;
 #elif defined(__GNUC__)
 #define PRINCIPIA_COMPILER_GCC 1
+#define PRINCIPIA_VECTORCALL
 char const* const CompilerName = "G++";
 char const* const CompilerVersion = __VERSION__;
 #else
@@ -87,19 +96,6 @@ char const* const Architecture = "x86-64";
 #  endif
 #endif
 
-// A function for use on control paths that don't return a value, typically
-// because they end with a |LOG(FATAL)|.
-#if PRINCIPIA_COMPILER_CLANG || PRINCIPIA_COMPILER_CLANG_CL
-[[noreturn]]
-#elif PRINCIPIA_COMPILER_MSVC
-__declspec(noreturn)
-#elif PRINCIPIA_COMPILER_ICC
-__attribute__((noreturn))
-#else
-#error "What compiler is this?"
-#endif
-inline void noreturn() { std::exit(0); }
-
 // Used to force inlining.
 #if PRINCIPIA_COMPILER_CLANG    ||  \
     PRINCIPIA_COMPILER_CLANG_CL ||  \
@@ -126,8 +122,8 @@ inline void noreturn() { std::exit(0); }
 
 // We assume that the processor is at least a Prescott since we only support
 // 64-bit architectures.
-#define PRINCIPIA_USE_SSE3_INTRINSICS !_DEBUG
-#define PRINCIPIA_USE_FMA_IF_AVAILABLE !_DEBUG
+#define PRINCIPIA_USE_SSE3_INTRINSICS() !_DEBUG
+#define PRINCIPIA_USE_FMA_IF_AVAILABLE() !_DEBUG
 
 // Set this to 1 to test analytical series based on piecewise Poisson series.
 #define PRINCIPIA_CONTINUOUS_TRAJECTORY_SUPPORTS_PIECEWISE_POISSON_SERIES 0
@@ -191,42 +187,86 @@ inline void noreturn() { std::exit(0); }
 // For templates in macro parameters.
 #define TEMPLATE(...) template<__VA_ARGS__>
 
-// For circumventing
-// https://developercommunity.visualstudio.com/content/problem/1256363/operator-call-incorrectly-marked-as-ambiguous-with.html.
-#if PRINCIPIA_COMPILER_MSVC_HAS_CXX20
-#define PRINCIPIA_MAX(l, r) ((l) > (r) ? (l) : (r))
-#define PRINCIPIA_MAX3(x1, x2, x3) \
-  PRINCIPIA_MAX((x1), PRINCIPIA_MAX((x2), (x3)))
-#define PRINCIPIA_MAX4(x1, x2, x3, x4) \
-  PRINCIPIA_MAX((x1), PRINCIPIA_MAX((x2), PRINCIPIA_MAX((x3), (x4))))
-#else
-#define PRINCIPIA_MAX(l, r) std::max((l), (r))
-#define PRINCIPIA_MAX3(x1, x2, x3) std::max({(x1), (x2), (x3)})
-#define PRINCIPIA_MAX4(x1, x2, x3, x4) std::max({(x1), (x2), (x3), (x4)})
-#endif
+#define PRINCIPIA_REPEAT8(...) \
+  PRINCIPIA_REPEAT4(__VA_ARGS__) PRINCIPIA_REPEAT4(__VA_ARGS__)
+#define PRINCIPIA_REPEAT4(...) \
+  PRINCIPIA_REPEAT2(__VA_ARGS__) PRINCIPIA_REPEAT2(__VA_ARGS__)
+#define PRINCIPIA_REPEAT2(...) \
+  PRINCIPIA_REPEAT1(__VA_ARGS__) PRINCIPIA_REPEAT1(__VA_ARGS__)
+#define PRINCIPIA_REPEAT1(...) __VA_ARGS__
+
+// The macro magic is inspired from http://jhnet.co.uk/articles/cpp_magic.  Note
+// that we are using __VA_OPT__ to stop the recursion and detect empty argument
+// lists because we are modern.
+#define PRINCIPIA_EMPTY()
+#define PRINCIPIA_DEFER1(m) m PRINCIPIA_EMPTY()
+
+#define PRINCIPIA_EVAL(...) PRINCIPIA_EVAL16(__VA_ARGS__)
+#define PRINCIPIA_EVAL16(...) PRINCIPIA_EVAL8(PRINCIPIA_EVAL8(__VA_ARGS__))
+#define PRINCIPIA_EVAL8(...) PRINCIPIA_EVAL4(PRINCIPIA_EVAL4(__VA_ARGS__))
+#define PRINCIPIA_EVAL4(...) PRINCIPIA_EVAL2(PRINCIPIA_EVAL2(__VA_ARGS__))
+#define PRINCIPIA_EVAL2(...) PRINCIPIA_EVAL1(PRINCIPIA_EVAL1(__VA_ARGS__))
+#define PRINCIPIA_EVAL1(...) __VA_ARGS__
+
+// Applies m_LAST to its last argument and m_NOT_LAST to the others.
+#define PRINCIPIA_MAP1_LAST(m, a0, ...) \
+  m##__VA_OPT__(_NOT)##_LAST(a0)       \
+      __VA_OPT__(PRINCIPIA_DEFER1(_PRINCIPIA_MAP1_LAST)()(m, __VA_ARGS__))
+#define _PRINCIPIA_MAP1_LAST() PRINCIPIA_MAP1_LAST
+
+#define PRINCIPIA_MAP2(m, a0, a1, ...) \
+  m(a0, a1) __VA_OPT__(PRINCIPIA_DEFER1(_PRINCIPIA_MAP2)()(m, a0, __VA_ARGS__))
+#define _PRINCIPIA_MAP2() PRINCIPIA_MAP2
+
+#define USING_DIRECTIVE_INTO(from_package_name, into_package_name) \
+  namespace into_package_name {                                    \
+    namespace internal {                                           \
+      using namespace from_package_name;                           \
+    }                                                              \
+  }
+
+#define USING_DIRECTIVES_INTO(from_package_name, ...) \
+  __VA_OPT__(PRINCIPIA_EVAL16(                        \
+      PRINCIPIA_MAP2(USING_DIRECTIVE_INTO, from_package_name, __VA_ARGS__)))
 
 // Forward declaration of a class or struct declared in an internal namespace
 // according to #602.
 // Usage:
-// FORWARD_DECLARE_FROM(p1, struct, T);
-// FORWARD_DECLARE_FROM(p2, TEMPLATE(int i) class, U);
-#define FORWARD_DECLARE_FROM(                            \
-    package_name, template_and_class_key, declared_name) \
-  namespace _##package_name {                            \
-    namespace internal {                                 \
-    template_and_class_key declared_name;                \
-    }                                                    \
-    using internal::declared_name;                       \
-  }
+//   FORWARD_DECLARE(struct, T, FROM(pack));
+//   FORWARD_DECLARE(TEMPLATE(int i) class, U, FROM(pack));
+//   FORWARD_DECLARE(class, T,
+//                   FROM(pack_a, pack_b),
+//                   INTO(pack1_a, pack1_b),
+//                   INTO(pack2));
+// There must be a FROM argument.  Optionally, there can be multiple INTO
+// arguments, in which case a using directive for pack is inserted into pack1,
+// pack2, etc.
 
-#define FORWARD_DECLARE_FUNCTION_FROM(                            \
-    package_name, template_and_result, declared_name, parameters) \
-  namespace _##package_name {                                     \
-    namespace internal {                                          \
-    template_and_result declared_name parameters;                 \
-    }                                                             \
-    using internal::declared_name;                                \
-  }
+#define NAMESPACE_NOT_LAST(x) x ::
+#define NAMESPACE_LAST(x) _ ## x
+
+#define FROM(...) PRINCIPIA_EVAL16(PRINCIPIA_MAP1_LAST(NAMESPACE, __VA_ARGS__))
+#define INTO(...) PRINCIPIA_EVAL16(PRINCIPIA_MAP1_LAST(NAMESPACE, __VA_ARGS__))
+
+#define FORWARD_DECLARE(                                           \
+    template_and_class_key, declared_name, from_package_name, ...) \
+  namespace from_package_name {                                    \
+    namespace internal {                                           \
+      template_and_class_key declared_name;                        \
+    }                                                              \
+    using internal::declared_name;                                 \
+  }                                                                \
+  USING_DIRECTIVES_INTO(from_package_name, __VA_ARGS__)
+
+#define FORWARD_DECLARE_FUNCTION(                                           \
+    template_and_result, declared_name, parameters, from_package_name, ...) \
+  namespace from_package_name {                                             \
+    namespace internal {                                                    \
+      template_and_result declared_name parameters;                         \
+    }                                                                       \
+    using internal::declared_name;                                          \
+  }                                                                         \
+  USING_DIRECTIVES_INTO(from_package_name, __VA_ARGS__)
 
 }  // namespace base
 }  // namespace principia

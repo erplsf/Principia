@@ -3,7 +3,7 @@
 #include "geometry/point.hpp"
 
 #include <string>
-#include <vector>
+#include <utility>
 
 #include "base/not_constructible.hpp"
 #include "geometry/grassmann.hpp"
@@ -19,7 +19,6 @@ namespace internal {
 using namespace principia::base::_not_constructible;
 using namespace principia::geometry::_grassmann;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 
 template<typename Vector>
@@ -97,25 +96,15 @@ Point<Vector>& Point<Vector>::operator-=(Vector const& translation) {
 }
 
 template<typename Vector>
-constexpr bool Point<Vector>::operator==(Point<Vector> const& right) const {
-  return coordinates_ == right.coordinates_;
-}
-
-template<typename Vector>
-constexpr bool Point<Vector>::operator!=(Point<Vector> const& right) const {
-  return coordinates_ != right.coordinates_;
-}
-
-template<typename Vector>
 void Point<Vector>::WriteToMessage(
     not_null<serialization::Point*> const message) const {
   PointSerializer<Vector>::WriteToMessage(coordinates_, message);
 }
 
 template<typename Vector>
-template<typename, typename>
 Point<Vector> Point<Vector>::ReadFromMessage(
-    serialization::Point const& message) {
+    serialization::Point const& message)
+  requires serializable<Vector> {
   Point result;
   result.coordinates_ = PointSerializer<Vector>::ReadFromMessage(message);
   return result;
@@ -146,41 +135,15 @@ Point<Product<L, R>> FusedNegatedMultiplyAdd(L const& a, R const& b,
 }
 
 template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool> operator<(
-    Point<Vector> const& left,
-    Point<Vector> const& right) {
-  return left.coordinates_ < right.coordinates_;
-}
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool>
-operator<=(Point<Vector> const& left, Point<Vector> const& right) {
-  return left.coordinates_ <= right.coordinates_;
-}
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool>
-operator>=(Point<Vector> const& left, Point<Vector> const& right) {
-  return left.coordinates_ >= right.coordinates_;
-}
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool> operator>(
-    Point<Vector> const& left,
-    Point<Vector> const& right) {
-  return left.coordinates_ > right.coordinates_;
-}
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, Point<Vector>>
-NextUp(Point<Vector> const x) {
+  requires convertible_to_quantity<Vector>
+constexpr Point<Vector> NextUp(Point<Vector> const x) {
   using quantities::_elementary_functions::NextUp;
   return Point<Vector>(NextUp(x.coordinates_));
 }
 
 template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, Point<Vector>>
-NextDown(Point<Vector> const x) {
+  requires convertible_to_quantity<Vector>
+constexpr Point<Vector> NextDown(Point<Vector> const x) {
   using quantities::_elementary_functions::NextDown;
   return Point<Vector>(NextDown(x.coordinates_));
 }
@@ -198,38 +161,5 @@ std::ostream& operator<<(std::ostream& out, Point<Vector> const& point) {
 
 }  // namespace internal
 }  // namespace _point
-
-namespace _barycentre_calculator {
-namespace internal {
-
-template<typename Vector, typename Weight>
-void BarycentreCalculator<Point<Vector>, Weight>::Add(
-    Point<Vector> const& point,
-    Weight const& weight) {
-  if (empty_) {
-    weighted_sum_ = point.coordinates_ * weight;
-    weight_ = weight;
-    empty_ = false;
-  } else {
-    weighted_sum_ += point.coordinates_ * weight;
-    weight_ += weight;
-  }
-}
-
-template<typename Vector, typename Weight>
-Point<Vector> BarycentreCalculator<Point<Vector>, Weight>::Get() const {
-  CHECK(!empty_) << "Empty BarycentreCalculator";
-  Point<Vector> const origin;
-  return origin + weighted_sum_ / weight_;
-}
-
-template<typename Vector, typename Weight>
-Weight const& BarycentreCalculator<Point<Vector>, Weight>::weight() const {
-  return weight_;
-}
-
-}  // namespace internal
-}  // namespace _barycentre_calculator
-
 }  // namespace geometry
 }  // namespace principia

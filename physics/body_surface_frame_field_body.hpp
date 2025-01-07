@@ -2,7 +2,7 @@
 
 #include "physics/body_surface_frame_field.hpp"
 
-#include "physics/continuous_trajectory.hpp"
+#include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
 
 namespace principia {
@@ -10,7 +10,6 @@ namespace physics {
 namespace _body_surface_frame_field {
 namespace internal {
 
-using namespace principia::geometry::_grassmann;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_quantities;
 
@@ -34,7 +33,7 @@ BodySurfaceFrameField<Frame, ThisFrame>::FromThisFrame(
       InnerProduct(zenith, body_axis_);
   double const axis_projection² = axis_projection * axis_projection;
 
-  // The unit vector |north| is directed along the polar axis.  Note that λ is
+  // The unit vector `north` is directed along the polar axis.  Note that λ is
   // positive.
   double const λ = 1 / Sqrt(1 - axis_projection²);
   auto const μ = -λ * axis_projection;

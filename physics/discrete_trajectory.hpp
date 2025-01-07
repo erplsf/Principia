@@ -3,43 +3,36 @@
 #include <iterator>
 #include <list>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 #include "absl/container/btree_map.h"
 #include "absl/status/status.h"
-#include "base/macros.hpp"
+#include "base/concepts.hpp"
 #include "base/not_null.hpp"
 #include "base/tags.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/space.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory_iterator.hpp"
-#include "physics/discrete_trajectory_segment.hpp"
 #include "physics/discrete_trajectory_segment_iterator.hpp"
-#include "physics/discrete_trajectory_segment_range.hpp"
 #include "physics/discrete_trajectory_types.hpp"
 #include "physics/trajectory.hpp"
 #include "serialization/physics.pb.h"
 
 namespace principia {
 namespace physics {
-
-FORWARD_DECLARE_FROM(discrete_trajectory_segment,
-                     TEMPLATE(typename Frame) class,
-                     DiscreteTrajectorySegment);
-
 namespace _discrete_trajectory {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_not_null;
 using namespace principia::base::_tags;
-using namespace principia::base::_traits;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_space;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_discrete_trajectory_iterator;
 using namespace principia::physics::_discrete_trajectory_segment_iterator;
-using namespace principia::physics::_discrete_trajectory_segment_range;
 using namespace principia::physics::_discrete_trajectory_types;
 using namespace principia::physics::_trajectory;
 
@@ -54,9 +47,9 @@ class DiscreteTrajectory : public Trajectory<Frame> {
   using reverse_iterator = std::reverse_iterator<iterator>;
   using SegmentIterator = DiscreteTrajectorySegmentIterator<Frame>;
   using ReverseSegmentIterator = std::reverse_iterator<SegmentIterator>;
-  using SegmentRange = DiscreteTrajectorySegmentRange<SegmentIterator>;
-  using ReverseSegmentRange =
-      DiscreteTrajectorySegmentRange<ReverseSegmentIterator>;
+  using SegmentRange = std::ranges::subrange<SegmentIterator,
+                                             SegmentIterator,
+                                             std::ranges::subrange_kind::sized>;
 
   DiscreteTrajectory();
 
@@ -87,8 +80,7 @@ class DiscreteTrajectory : public Trajectory<Frame> {
   iterator upper_bound(Instant const& t) const;
 
   SegmentRange segments() const;
-  // TODO(phl): In C++20 this should be a reverse_view on segments.
-  ReverseSegmentRange rsegments() const;
+  std::ranges::reverse_view<SegmentRange> rsegments() const;
 
   SegmentIterator NewSegment();
 
@@ -110,7 +102,7 @@ class DiscreteTrajectory : public Trajectory<Frame> {
   absl::Status Append(Instant const& t,
                       DegreesOfFreedom<Frame> const& degrees_of_freedom);
 
-  // Merges |trajectory| (the source) into this object (the target).  The
+  // Merges `trajectory` (the source) into this object (the target).  The
   // operation processes pairs of segments taken from each trajectory and
   // proceeds as follows:
   // 1. If the source segment is empty (or missing), leave the target segment
@@ -131,8 +123,8 @@ class DiscreteTrajectory : public Trajectory<Frame> {
   DegreesOfFreedom<Frame> EvaluateDegreesOfFreedom(
       Instant const& t) const override;
 
-  // The segments in |tracked| are restored at deserialization.  The points
-  // denoted by |exact| are written and re-read exactly and are not affected by
+  // The segments in `tracked` are restored at deserialization.  The points
+  // denoted by `exact` are written and re-read exactly and are not affected by
   // any errors introduced by zfp compression.  The endpoints of each segment
   // are always exact.
   void WriteToMessage(
@@ -147,15 +139,14 @@ class DiscreteTrajectory : public Trajectory<Frame> {
       std::vector<SegmentIterator> const& tracked,
       std::vector<iterator> const& exact) const;
 
-  // |tracked| must have a size appropriate for the |message| being deserialized
-  // and the orders of the |tracked| iterators must be consistent during
-  // serialization and deserialization.  Upon return, the iterators in |tracked|
+  // `tracked` must have a size appropriate for the `message` being deserialized
+  // and the orders of the `tracked` iterators must be consistent during
+  // serialization and deserialization.  Upon return, the iterators in `tracked`
   // are past-the-end iff they were past-the-end at serialization time.
-  template<typename F = Frame,
-           typename = std::enable_if_t<is_serializable_v<F>>>
   static DiscreteTrajectory ReadFromMessage(
       serialization::DiscreteTrajectory const& message,
-      std::vector<SegmentIterator*> const& tracked);
+      std::vector<SegmentIterator*> const& tracked)
+    requires serializable<Frame>;
 
  private:
   using DownsamplingParameters =
@@ -183,7 +174,7 @@ class DiscreteTrajectory : public Trajectory<Frame> {
   absl::Status ConsistencyStatus() const;
 
   // Updates the segments self-pointers and the time-to-segment mapping after
-  // segments have been spliced from |from| to |to|.  The iterator indicates the
+  // segments have been spliced from `from` to `to`.  The iterator indicates the
   // segments to fix-up.
   static void AdjustAfterSplicing(
       DiscreteTrajectory& from,
@@ -220,10 +211,10 @@ class DiscreteTrajectory : public Trajectory<Frame> {
   // DiscreteTrajectory moves.  This field is never null and never empty.
   not_null<std::unique_ptr<Segments>> segments_;
 
-  // Maps time |t| to the last segment that start at time |t|.  Does not contain
+  // Maps time `t` to the last segment that start at time `t`.  Does not contain
   // entries for empty segments (at the beginning of the trajectory) or for
   // 1-point segments that are not the last at their time.  Empty iff the entire
-  // trajectory is empty.  Always updated using |insert_or_assign| to override
+  // trajectory is empty.  Always updated using `insert_or_assign` to override
   // any preexisting segment with the same endpoint.
   SegmentByLeftEndpoint segment_by_left_endpoint_;
 };

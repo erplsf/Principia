@@ -1,17 +1,16 @@
 #include "physics/discrete_trajectory_segment_iterator.hpp"
 
+#include <iterator>
 #include <memory>
-#include <vector>
 
 #include "base/not_null.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/instant.hpp"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory_segment.hpp"
-#include "physics/discrete_trajectory_types.hpp"
 #include "quantities/si.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 
 namespace principia {
 namespace physics {
@@ -29,6 +28,8 @@ class DiscreteTrajectorySegmentIteratorTest : public ::testing::Test {
  protected:
   using World = Frame<struct WorldTag>;
   using Segments = _discrete_trajectory_types::Segments<World>;
+  static_assert(
+      std::bidirectional_iterator<DiscreteTrajectorySegmentIterator<World>>);
 
   DiscreteTrajectorySegmentIteratorTest()
       : segments_(MakeSegments(3)) {
@@ -63,7 +64,7 @@ class DiscreteTrajectorySegmentIteratorTest : public ::testing::Test {
     return DiscreteTrajectorySegmentIterator<World>(segments, iterator);
   }
 
-  // Constructs a list of |n| segments which are properly initialized.
+  // Constructs a list of `n` segments which are properly initialized.
   // TODO(phl): Move to a central place.
   static not_null<std::unique_ptr<Segments>> MakeSegments(const int n) {
     auto segments = make_not_null_unique<Segments>(n);

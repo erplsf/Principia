@@ -2,7 +2,6 @@
 
 #include "base/not_null.hpp"
 #include "ksp_plugin/frames.hpp"
-#include "ksp_plugin/identification.hpp"
 #include "ksp_plugin/plugin.hpp"
 #include "physics/discrete_trajectory.hpp"
 
@@ -27,14 +26,16 @@ class Iterator {
   virtual int Size() const = 0;
 };
 
-// A concrete, typed subclass of |Iterator| which holds a |Container|.
+// A concrete, typed subclass of `Iterator` which holds a `Container`.
 template<typename Container>
 class TypedIterator : public Iterator {
  public:
-  explicit TypedIterator(Container container);
+  // The `plugin` may be nullptr but it must be provided.
+  TypedIterator(Container container,
+                Plugin const* plugin);
 
   // Obtains the element denoted by this iterator and converts it to some
-  // |Interchange| type using |convert|.
+  // `Interchange` type using `convert`.
   template<typename Interchange>
   Interchange Get(
       std::function<Interchange(typename Container::value_type const&)> const&
@@ -45,12 +46,15 @@ class TypedIterator : public Iterator {
   void Reset() override;
   int Size() const override;
 
+  Plugin const* plugin() const;
+
  private:
   Container container_;
   typename Container::const_iterator iterator_;
+  Plugin const* plugin_;
 };
 
-// A specialization for |DiscreteTrajectory<World>|.
+// A specialization for `DiscreteTrajectory<World>`.
 template<>
 class TypedIterator<DiscreteTrajectory<World>> : public Iterator {
  public:
@@ -58,7 +62,7 @@ class TypedIterator<DiscreteTrajectory<World>> : public Iterator {
                 not_null<Plugin const*> plugin);
 
   // Obtains the element denoted by this iterator and converts it to some
-  // |Interchange| type using |convert|.
+  // `Interchange` type using `convert`.
   template<typename Interchange>
   Interchange Get(
       std::function<Interchange(

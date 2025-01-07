@@ -2,10 +2,7 @@
 
 #include "geometry/identity.hpp"
 
-#include "base/mappable.hpp"
-#include "geometry/grassmann.hpp"
 #include "geometry/orthogonal_map.hpp"
-#include "geometry/sign.hpp"
 
 namespace principia {
 namespace geometry {
@@ -82,9 +79,9 @@ void Identity<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Identity<FromFrame, ToFrame> Identity<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::LinearMap const& message) {
+    serialization::LinearMap const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   LinearMap<Identity, FromFrame, ToFrame>::ReadFromMessage(message);
   CHECK(message.HasExtension(serialization::Identity::extension));
   return ReadFromMessage(
@@ -96,9 +93,9 @@ void Identity<FromFrame, ToFrame>::WriteToMessage(
     not_null<serialization::Identity*> const message) const {}
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Identity<FromFrame, ToFrame> Identity<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::Identity const& message) {
+    serialization::Identity const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   return Identity();
 }
 

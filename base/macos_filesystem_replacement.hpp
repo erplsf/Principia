@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <string>
 
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For OS_MACOSX.
 
 #if !OS_MACOSX
 #error Only include this file for macOS

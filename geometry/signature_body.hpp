@@ -3,6 +3,9 @@
 #include "geometry/signature.hpp"
 
 #include "base/traits.hpp"
+#include "geometry/orthogonal_map.hpp"
+#include "geometry/quaternion.hpp"
+#include "geometry/r3_element.hpp"
 #include "geometry/rotation.hpp"
 
 namespace principia {
@@ -19,17 +22,17 @@ using namespace principia::geometry::_rotation;
 template<typename FromFrame, typename ToFrame>
 constexpr Signature<FromFrame, ToFrame>::Signature(Sign const x,
                                                    Sign const y,
-                                                   DeduceSign const z)
+                                                   DeduceSign const)
     : x_(x), y_(y), z_(x * y * determinant_) {}
 
 template<typename FromFrame, typename ToFrame>
 constexpr Signature<FromFrame, ToFrame>::Signature(Sign const x,
-                                                   DeduceSign const y,
+                                                   DeduceSign const,
                                                    Sign const z)
     : x_(x), y_(x * determinant_ * z), z_(z) {}
 
 template<typename FromFrame, typename ToFrame>
-constexpr Signature<FromFrame, ToFrame>::Signature(DeduceSign const x,
+constexpr Signature<FromFrame, ToFrame>::Signature(DeduceSign const,
                                                    Sign const y,
                                                    Sign const z)
     : x_(determinant_ * y * z), y_(y), z_(z) {}
@@ -147,9 +150,9 @@ void Signature<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Signature<FromFrame, ToFrame> Signature<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::LinearMap const& message) {
+    serialization::LinearMap const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   LinearMap<Signature, FromFrame, ToFrame>::ReadFromMessage(message);
   CHECK(message.HasExtension(serialization::Signature::extension));
   return ReadFromMessage(
@@ -165,9 +168,9 @@ void Signature<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Signature<FromFrame, ToFrame> Signature<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::Signature const& message) {
+    serialization::Signature const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   auto const x = Sign::ReadFromMessage(message.x());
   auto const y = Sign::ReadFromMessage(message.y());
   auto const z = Sign::ReadFromMessage(message.z());

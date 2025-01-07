@@ -9,6 +9,7 @@ option cc_enable_arenas = true;
 
 // We would like to use Cyrillic for the name of this message, but the protobuf
 // language only supports ASCII in identifiers.  Sigh.  Blame Kenton.
+// Removed in Канторович.
 message ChebyshevSeries {
   message Coefficient {
     oneof coefficient {
@@ -18,8 +19,8 @@ message ChebyshevSeries {
     }
   }
   repeated Coefficient coefficient = 1;
-  required Point t_min = 2;
-  required Point t_max = 3;
+  required Point lower_bound = 2;  // Renamed in Julia.
+  required Point upper_bound = 3;  // Renamed in Julia.
 }
 
 message DoublePrecision {
@@ -63,12 +64,55 @@ message PoissonSeries {
 
 message Polynomial {
   required int32 degree = 1;
-  extensions 10000 to 10999;  // Last used: 10000.
+  extensions 10000 to 10999;  // Last used: 10001.
+}
+
+message PolynomialInChebyshevBasis {
+  extend Polynomial {
+    optional PolynomialInChebyshevBasis extension = 10001;
+  }
+  message Coefficient {
+    oneof message {
+      double double = 1;
+      Quantity quantity = 2;
+      Multivector multivector = 3;
+    }
+  }
+  message Argument {
+    oneof message {
+      double double = 1;
+      Quantity quantity = 2;
+      Multivector multivector = 3;
+      Point point = 4;
+    }
+  }
+  repeated Coefficient coefficient = 1;
+  required Argument lower_bound = 2;
+  required Argument upper_bound = 3;
 }
 
 message PolynomialInMonomialBasis {
   extend Polynomial {
     optional PolynomialInMonomialBasis extension = 10000;
+  }
+  // Added in کاشانی.  Not used in the representation of polynomials, but in
+  // code that constructs them.
+  message Policy {
+    enum Kind {
+      ALWAYS_ESTRIN_WITHOUT_FMA = 0;
+      ALWAYS_ESTRIN = 1;
+    }
+    required Kind kind = 1;
+  }
+
+  message Evaluator {
+    enum Kind {
+      ESTRIN = 0;
+      HORNER = 1;
+      ESTRIN_WITHOUT_FMA = 2;
+      HORNER_WITHOUT_FMA = 3;
+    }
+    required Kind kind = 1;
   }
   message Coefficient {
     oneof message {
@@ -79,11 +123,13 @@ message PolynomialInMonomialBasis {
     }
   }
   repeated Coefficient coefficient = 1;
-  // Added in Gr�bner.
+  // Added in Gröbner.
   oneof origin {
     double double = 3;
     Quantity quantity = 4;
     Multivector multivector = 5;
     Point point = 2;  // Was optional Point origin = 2;
   }
+  // Added in Καραθεοδωρή.
+  optional Evaluator evaluator = 6;
 }

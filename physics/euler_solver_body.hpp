@@ -4,8 +4,10 @@
 
 #include <algorithm>
 
-#include "geometry/grassmann.hpp"
+#include "geometry/orthogonal_map.hpp"
 #include "geometry/quaternion.hpp"
+#include "geometry/sign.hpp"
+#include "geometry/space_transformations.hpp"
 #include "numerics/elliptic_functions.hpp"
 #include "numerics/elliptic_integrals.hpp"
 #include "quantities/elementary_functions.hpp"
@@ -16,17 +18,13 @@ namespace physics {
 namespace _euler_solver {
 namespace internal {
 
-using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_quaternion;
-using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_sign;
-using namespace principia::geometry::_signature;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::numerics::_elliptic_functions;
 using namespace principia::numerics::_elliptic_integrals;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
 template<typename InertialFrame, typename PrincipalAxesFrame>
@@ -384,6 +382,13 @@ EulerSolver<InertialFrame, PrincipalAxesFrame>::AttitudeAt(
     }
     default:
       LOG(FATAL) << "Unexpected region " << static_cast<int>(region_);
+#if PRINCIPIA_COMPILER_MSVC && \
+    (_MSC_FULL_VER == 193'933'523 || \
+     _MSC_FULL_VER == 194'033'813 || \
+     _MSC_FULL_VER == 194'134'120 || \
+     _MSC_FULL_VER == 194'134'123)
+      std::abort();
+#endif
   }
 }
 

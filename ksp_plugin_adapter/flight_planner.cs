@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using KSP.Localization;
 
 namespace principia {
 namespace ksp_plugin_adapter {
@@ -49,6 +48,31 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
     node.SetValue("show_guidance", show_guidance_, createIfNotFound : true);
   }
 
+  internal NavigationManoeuvre GetManœuvre(int i) {
+    string vessel_guid = predicted_vessel?.id.ToString();
+    if (vessel_guid == null) {
+      Log.Fatal("there is no predicted vessel");
+    }
+    return plugin.FlightPlanGetManoeuvre(vessel_guid, i);
+  }
+
+  internal void ReplaceBurn(int i, Burn burn) {
+    string vessel_guid = predicted_vessel?.id.ToString();
+    if (vessel_guid == null) {
+      return;
+    }
+    var status = plugin.FlightPlanReplace(vessel_guid, burn, i);
+    UpdateStatus(status, i);
+    ResetOptimizer(vessel_guid);
+    if (burn_editors_?.Count > i && burn_editors_[i] is BurnEditor editor) {
+      editor.Reset(plugin.FlightPlanGetManoeuvre(vessel_guid, i));
+    }
+  }
+
+  internal void RequestEditorFocus(int i) {
+    requested_editor_focus_index_ = i;
+  }
+
   protected override string Title =>
       L10N.CacheFormat("#Principia_FlightPlan_Title");
 
@@ -76,7 +100,8 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
       for (int i = 0; i < flight_plans; ++i) {
         var id = new string(L10N.CacheFormat("#Principia_AlphabeticList")[i],
                             1);
-        if (UnityEngine.GUILayout.Toggle(i == selected_flight_plan, id,
+        if (UnityEngine.GUILayout.Toggle(i == selected_flight_plan,
+                                         id,
                                          "Button",
                                          GUILayoutWidth(1)) &&
             i != selected_flight_plan) {
@@ -119,7 +144,7 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
         editor.Close();
       }
       burn_editors_ = null;
-      Shrink();
+      ScheduleShrink();
     }
   }
 
@@ -134,6 +159,17 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
         ClearBurnEditors();
         previous_predicted_vessel_ = predicted_vessel;
       }
+
+      if (vessel_guid != null && plugin.FlightPlanExists(vessel_guid)) {
+        bool changed = plugin.FlightPlanUpdateFromOptimization(vessel_guid);
+        if (changed) {
+          for (int i = 0; i < (burn_editors_?.Count ?? 0); ++i) {
+            if (burn_editors_[i] is BurnEditor editor) {
+              editor.Reset(plugin.FlightPlanGetManoeuvre(vessel_guid, i));
+            }
+          }
+        }
+      }
     }
 
     if (burn_editors_ == null) {
@@ -146,16 +182,16 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
         for (int i = 0;
              i < plugin.FlightPlanNumberOfManoeuvres(vessel_guid);
              ++i) {
-          // Dummy initial time, we call |Reset| immediately afterwards.
+          // Dummy initial time, we call `Reset` immediately afterwards.
           burn_editors_.Add(new BurnEditor(adapter_,
                                            predicted_vessel,
                                            initial_time      : 0,
-                                           index             : i,
                                            get_burn_at_index : burn_editors_.
                                                ElementAtOrDefault));
           burn_editors_.Last().Reset(
               plugin.FlightPlanGetManoeuvre(vessel_guid, i));
         }
+        UpdateBurnEditorIndices(vessel_guid);
       }
     }
 
@@ -171,21 +207,35 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
           break;
         }
       }
+
       // Must be computed during layout as it affects the layout of some of the
       // differential sliders.
       number_of_anomalous_manœuvres_ =
           plugin.FlightPlanNumberOfAnomalousManoeuvres(vessel_guid);
+
+      // Detect if the anomalous status has changed asynchronously because of
+      // the prolongator.  If so, we will "tickle", i.e., pretend that the
+      // desired final time changed.
+      bool reached_deadline = plugin.FlightPlanGetAnomalousStatus(vessel_guid).
+          is_deadline_exceeded();
+      must_tickle_ = reached_deadline != reached_deadline_;
     }
   }
 
   private void RenderFlightPlan(string vessel_guid) {
     using (new UnityEngine.GUILayout.VerticalScope()) {
-      if (final_time_.Render(enabled : true)) {
+      // A change of anomalous status "tickles" the flight plan.  Note that the
+      // order of the terms in the || below matters, we always want to render
+      // the `final_time_`.
+      if (final_time_.Render(enabled : true) || must_tickle_) {
+        must_tickle_ = false;
         var status =
             plugin.FlightPlanSetDesiredFinalTime(
                 vessel_guid,
                 final_time_.value);
+        reached_deadline_ = status.is_deadline_exceeded();
         UpdateStatus(status, null);
+        ResetOptimizer(vessel_guid);
       }
       // Always refresh the final time from C++ as it may have changed because
       // the last burn changed.
@@ -228,6 +278,7 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
                     vessel_guid,
                     parameters);
             UpdateStatus(status, null);
+            ResetOptimizer(vessel_guid);
           }
           UnityEngine.GUILayout.TextArea(
               max_steps_[max_steps_index_].ToString(),
@@ -243,6 +294,7 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
                     vessel_guid,
                     parameters);
             UpdateStatus(status, null);
+            ResetOptimizer(vessel_guid);
           }
         }
         using (new UnityEngine.GUILayout.HorizontalScope()) {
@@ -263,6 +315,7 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
                     vessel_guid,
                     parameters);
             UpdateStatus(status, null);
+            ResetOptimizer(vessel_guid);
           }
           UnityEngine.GUILayout.TextArea(
               length_integration_tolerances_names_[
@@ -283,12 +336,13 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
                     vessel_guid,
                     parameters);
             UpdateStatus(status, null);
+            ResetOptimizer(vessel_guid);
           }
         }
       }
 
-      double Δv = (from burn_editor in burn_editors_
-                   select burn_editor.Δv()).Sum();
+      double Δv = (from burn_editor in burn_editors_ select burn_editor.Δv()).
+          Sum();
       UnityEngine.GUILayout.Label(L10N.CacheFormat(
                                       "#Principia_FlightPlan_TotalΔv",
                                       Δv.ToString("0.000")));
@@ -318,34 +372,139 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
             new PlannedOrbitAnalyser(adapter_, predicted_vessel_);
         plugin.FlightPlanDelete(vessel_guid);
         ResetStatus();
-        Shrink();
+        ScheduleShrink();
         // The state change will happen the next time we go through OnGUI.
       } else {
         using (new UnityEngine.GUILayout.HorizontalScope()) {
           if (UnityEngine.GUILayout.Button(
-              L10N.CacheFormat("#Principia_FlightPlan_Rebase"))) {
+                  L10N.CacheFormat("#Principia_FlightPlan_Rebase"))) {
             var status = plugin.FlightPlanRebase(
                 vessel_guid,
                 predicted_vessel.GetTotalMass());
             UpdateStatus(status, null);
+            ResetOptimizer(vessel_guid);
             if (status.ok()) {
               // The final time does not change, but since it is displayed with
               // respect to the beginning of the flight plan, the text must be
               // recomputed.
-              final_time_.ResetValue(
-                  plugin.FlightPlanGetDesiredFinalTime(vessel_guid));
+              final_time_.value =
+                  plugin.FlightPlanGetDesiredFinalTime(vessel_guid);
+              UpdateBurnEditorIndices(vessel_guid);
               return;
             }
           }
           if (plugin.FlightPlanCount(vessel_guid) < max_flight_plans &&
               UnityEngine.GUILayout.Button(
-              L10N.CacheFormat("#Principia_FlightPlan_Duplicate"))) {
+                  L10N.CacheFormat("#Principia_FlightPlan_Duplicate"))) {
             plugin.FlightPlanDuplicate(vessel_guid);
+          }
+        }
+
+        // There is no Layout/Repaint trouble here because the frame is selected
+        // in another window.
+        if (adapter_.plotting_frame_selector_.
+                Centre() is CelestialBody centre) {
+          Style.HorizontalLine();
+          using (new UnityEngine.GUILayout.HorizontalScope()) {
+            UnityEngine.GUILayout.Label(
+                L10N.CelestialString("#Principia_FlightPlan_Optimization",
+                                     new[]{ centre }),
+                style: Style.MiddleLeftAligned(UnityEngine.GUI.skin.label,
+                                               Height(2)));
+            using (new UnityEngine.GUILayout.VerticalScope()) {
+              double optimization_altitude = optimization_altitude_;
+              double? optimization_inclination_in_degrees =
+                  optimization_inclination_in_degrees_;
+
+              using (new UnityEngine.GUILayout.HorizontalScope()) {
+                UnityEngine.GUILayout.Label(
+                    L10N.CacheFormat("#Principia_FlightPlan_TargetAltitude"));
+                string text = UnityEngine.GUILayout.TextField(
+                    optimization_altitude.FormatN(0),
+                    GUILayoutWidth(3));
+                UnityEngine.GUILayout.Label(
+                    text    : L10N.CacheFormat(
+                        "#Principia_FlightPlan_AltitudeUnit"),
+                    options : GUILayoutWidth(1));
+                UnityEngine.GUILayout.Label(
+                    text    : "",
+                    options : GUILayoutWidth(2));
+                if (double.TryParse(text,
+                                    System.Globalization.NumberStyles.Any,
+                                    Culture.culture,
+                                    out double candidate)) {
+                  if (candidate >= 0 && candidate < double.PositiveInfinity) {
+                    optimization_altitude = candidate;
+                  }
+                }
+              }
+
+              using (new UnityEngine.GUILayout.HorizontalScope()) {
+                UnityEngine.GUILayout.Label(
+                    L10N.CacheFormat("#Principia_FlightPlan_TargetInclination"));
+                string text = UnityEngine.GUILayout.TextField(
+                    optimization_inclination_in_degrees.HasValue
+                        ? optimization_inclination_in_degrees.Value.FormatN(0)
+                        : L10N.CacheFormat(
+                            "#Principia_FlightPlan_OptimizeInclinationNoText"),
+                    GUILayoutWidth(3));
+                UnityEngine.GUILayout.Label(
+                    text: L10N.CacheFormat(
+                        "#Principia_FlightPlan_InclinationUnit"),
+                    options: GUILayoutWidth(1));
+                bool optimize_inclination = UnityEngine.GUILayout.Toggle(
+                        optimization_inclination_in_degrees.HasValue,
+                        optimization_inclination_in_degrees.HasValue
+                            ? L10N.CacheFormat(
+                                "#Principia_FlightPlan_OptimizeInclinationOn")
+                            : L10N.CacheFormat(
+                                "#Principia_FlightPlan_OptimizeInclinationOff"),
+                        GUILayoutWidth(2));
+                if (!optimize_inclination) {
+                  optimization_inclination_in_degrees = null;
+                } else if (text ==
+                           L10N.CacheFormat(
+                               "#Principia_FlightPlan_OptimizeInclinationNoText")) {
+                  optimization_inclination_in_degrees = 0;
+                } else if (double.TryParse(text,
+                                           System.Globalization.NumberStyles.
+                                               Any,
+                                           Culture.culture,
+                                           out double candidate)) {
+                  optimization_inclination_in_degrees =
+                      Math.Max(Math.Min(180, candidate), -180);
+                }
+              }
+
+              // If any of the parameters changed (that includes a change of
+              // plotting frame in another window), recreate the optimization
+              // driver.  This interrupts any optimization that might be
+              // running, to avoid confusing results.
+              if (optimization_altitude_ != optimization_altitude ||
+                  optimization_inclination_in_degrees_ !=
+                  optimization_inclination_in_degrees ||
+                  optimization_reference_frame_parameters_ !=
+                  (NavigationFrameParameters)adapter_.plotting_frame_selector_.
+                      FrameParameters()) {
+                ResetOptimizer(vessel_guid,
+                               centre,
+                               optimization_altitude,
+                               optimization_inclination_in_degrees);
+              }
+            }
           }
         }
 
         if (burn_editors_.Count > 0) {
           RenderUpcomingEvents();
+        }
+
+        if (requested_editor_focus_index_ is int requested_focus) {
+          requested_editor_focus_index_ = null;
+          for (int i = 0; i < burn_editors_.Count; ++i) {
+            burn_editors_[i].minimized = requested_focus != i;
+          }
+          ScheduleShrink();
         }
 
         // Compute the final times for each manœuvre before displaying them.
@@ -365,32 +524,31 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
           Style.HorizontalLine();
           BurnEditor burn = burn_editors_[i];
           switch (burn.Render(
-              header          :
-              L10N.CacheFormat("#Principia_FlightPlan_ManœuvreHeader", i + 1),
-              anomalous       : i >=
-                                burn_editors_.Count -
-                                number_of_anomalous_manœuvres_,
-              burn_final_time : final_times[i],
-              orbital_period  : orbital_period)) {
+                      header          :
+                      L10N.CacheFormat("#Principia_FlightPlan_ManœuvreHeader",
+                                       i + 1),
+                      anomalous       : i >=
+                                        burn_editors_.Count -
+                                        number_of_anomalous_manœuvres_,
+                      burn_final_time : final_times[i],
+                      orbital_period  : orbital_period)) {
             case BurnEditor.Event.Deleted: {
               var status = plugin.FlightPlanRemove(vessel_guid, i);
               UpdateStatus(status, null);
+              ResetOptimizer(vessel_guid);
               burn_editors_[i].Close();
               burn_editors_.RemoveAt(i);
-              UpdateBurnEditorIndices();
-              Shrink();
+              UpdateBurnEditorIndices(vessel_guid);
+              ScheduleShrink();
               return;
             }
             case BurnEditor.Event.Minimized:
             case BurnEditor.Event.Maximized: {
-              Shrink();
+              ScheduleShrink();
               return;
             }
             case BurnEditor.Event.Changed: {
-              var status =
-                  plugin.FlightPlanReplace(vessel_guid, burn.Burn(), i);
-              UpdateStatus(status, i);
-              burn.Reset(plugin.FlightPlanGetManoeuvre(vessel_guid, i));
+              ReplaceBurn(i, burn.Burn());
               break;
             }
             case BurnEditor.Event.None: {
@@ -512,7 +670,7 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
       }
       if (UnityEngine.GUILayout.Button(
               L10N.CacheFormat("#Principia_FlightPlan_AddManœuvre"),
-              GUILayoutWidth(4))) {
+              GUILayoutWidth(5))) {
         double initial_time;
         if (index == 0) {
           initial_time = plugin.CurrentTime() + 60;
@@ -524,15 +682,15 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
         var editor = new BurnEditor(adapter_,
                                     predicted_vessel,
                                     initial_time,
-                                    index,
                                     get_burn_at_index : burn_editors_.
-                                        ElementAtOrDefault);
-        editor.minimized = false;
+                                        ElementAtOrDefault){
+            minimized = false
+        };
         Burn candidate_burn = editor.Burn();
-        var status = plugin.FlightPlanInsert(
-            vessel_guid,
-            candidate_burn,
-            index);
+        var status = plugin.FlightPlanInsert(vessel_guid,
+                                             candidate_burn,
+                                             index);
+        ResetOptimizer(vessel_guid);
 
         // The previous call did not necessarily create a manœuvre.  Check if
         // we need to add an editor.
@@ -541,9 +699,9 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
         if (number_of_manœuvres > burn_editors_.Count) {
           editor.Reset(plugin.FlightPlanGetManoeuvre(vessel_guid, index));
           burn_editors_.Insert(index, editor);
-          UpdateBurnEditorIndices();
+          UpdateBurnEditorIndices(vessel_guid);
           UpdateStatus(status, index);
-          Shrink();
+          ScheduleShrink();
           return true;
         }
         // TODO(phl): The error messaging here will be either confusing or
@@ -584,6 +742,39 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
     value = ts.total_seconds +
             plugin.FlightPlanGetInitialTime(predicted_vessel.id.ToString());
     return true;
+  }
+
+  // Called to rebuild the optimizer based on the current state of the flight
+  // plan and the given optimization parameters.
+  private void ResetOptimizer(string vessel_guid,
+                              CelestialBody centre,
+                              double optimization_altitude,
+                              double? optimization_inclination_in_degrees) {
+    optimization_altitude_ = optimization_altitude;
+    optimization_inclination_in_degrees_ = optimization_inclination_in_degrees;
+    optimization_reference_frame_parameters_ =
+        (NavigationFrameParameters)adapter_.plotting_frame_selector_.
+            FrameParameters();
+    plugin.FlightPlanOptimizationDriverMake(vessel_guid,
+                                            centre.Radius +
+                                            optimization_altitude_,
+                                            optimization_inclination_in_degrees_,
+                                            centre.flightGlobalsIndex,
+                                            optimization_reference_frame_parameters_);
+  }
+
+  // Must be called each time the flight plan is changed by the user: the
+  // optimizer holds a copy of the flight plan, so proceeding with it would be
+  // wrong or confusing.
+  private void ResetOptimizer(string vessel_guid) {
+    // Rebuild the optimizer as whatever it was doing is now irrelevant.
+    if (adapter_.plotting_frame_selector_.
+            Centre() is CelestialBody centre) {
+      ResetOptimizer(vessel_guid,
+                     centre,
+                     optimization_altitude_,
+                     optimization_inclination_in_degrees_);
+    }
   }
 
   private void ResetStatus() {
@@ -677,6 +868,12 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
           remedy_message =
               L10N.CacheFormat("#Principia_FlightPlan_StatusMessage_Increase");
         }
+      } else if (status_.is_deadline_exceeded()) {
+        status_message =
+            L10N.CacheFormat(
+                "#Principia_FlightPlan_StatusMessage_DeadlineExceeded");
+        remedy_message =
+            L10N.CacheFormat("#Principia_FlightPlan_StatusMessage_Tickle");
       } else if (status_.is_unavailable()) {
         status_message =
             L10N.CacheFormat("#Principia_FlightPlan_StatusMessage_CantRebase");
@@ -705,7 +902,8 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
     return message;
   }
 
-  private void UpdateBurnEditorIndices() {
+  private void UpdateBurnEditorIndices(string vessel_guid) {
+    // Adjust the indices of the current burn editors.
     for (int j = 0; j < burn_editors_.Count; ++j) {
       burn_editors_[j].index = j;
     }
@@ -744,6 +942,8 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
   private readonly DifferentialSlider final_time_;
   private int? first_future_manœuvre_;
   private int number_of_anomalous_manœuvres_ = 0;
+  private bool reached_deadline_ = false;
+  private bool must_tickle_ = false;
 
   private int length_integration_tolerance_index_;
   private int speed_integration_tolerance_index_;
@@ -755,10 +955,20 @@ class FlightPlanner : VesselSupervisedWindowRenderer {
   private int? first_error_manœuvre_;  // May exceed the number of manœuvres.
   private bool message_was_displayed_ = false;
 
+  private int? requested_editor_focus_index_;
+
   private const double log10_time_lower_rate = 0.0;
   private const double log10_time_upper_rate = 7.0;
 
   private const int max_flight_plans = 10;
+
+  private const double default_optimization_altitude = 10e3;
+  private const double default_optimization_inclination_in_degrees = 0;
+
+  private double optimization_altitude_ = default_optimization_altitude;
+  private double? optimization_inclination_in_degrees_ =
+      default_optimization_inclination_in_degrees;
+  private NavigationFrameParameters optimization_reference_frame_parameters_;
 }
 
 }  // namespace ksp_plugin_adapter

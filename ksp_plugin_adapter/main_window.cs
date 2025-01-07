@@ -7,10 +7,10 @@ namespace ksp_plugin_adapter {
 
 internal class MainWindow : VesselSupervisedWindowRenderer {
   // Update this section before each release.
-  private const string next_release_name = "ابن الهيثم";
-  private const int next_release_lunation_number = 289;
+  private const string next_release_name = "Kuratowski";
+  private const int next_release_lunation_number = 310;
   private readonly DateTimeOffset next_release_date_ =
-      new DateTimeOffset(2023, 05, 19, 15, 55, 00, TimeSpan.Zero);
+      new DateTimeOffset(2025, 01, 29, 12, 35, 59, TimeSpan.Zero);
 
   public MainWindow(
       PrincipiaPluginAdapter adapter,
@@ -47,8 +47,9 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
     }
   }
 
-  public bool show_only_pinned_markers { get; private set; } = false;
-  public bool show_only_pinned_celestials { get; private set; } = false;
+  public bool show_unpinned_markers { get; private set; } = true;
+  public bool show_unpinned_celestials { get; private set; } = true;
+  public bool show_equipotentials { get; private set; } = true;
 
   public bool selecting_active_vessel_target { get; private set; } = false;
 
@@ -167,17 +168,20 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
                                   style : Style.Info(
                                       UnityEngine.GUI.skin.label));
       history_length_.Render(enabled : true);
-      if (MapView.MapIsEnabled &&
-          FlightGlobals.ActiveVessel?.orbitTargeter != null) {
+      if (FlightGlobals.ActiveVessel?.orbitTargeter != null &&
+          (MapView.MapIsEnabled ||
+           FlightGlobals.fetch.VesselTarget?.GetVessel() != null)) {
         show_selection_ui_ = true;
         using (new UnityEngine.GUILayout.HorizontalScope()) {
-          selecting_active_vessel_target = UnityEngine.GUILayout.Toggle(
-              selecting_active_vessel_target,
-              L10N.CacheFormat("#Principia_MainWindow_TargetVessel_Select"));
-          if (selecting_active_vessel_target) {
-            selecting_target_celestial_ = false;
+          if (MapView.MapIsEnabled) {
+            selecting_active_vessel_target = UnityEngine.GUILayout.Toggle(
+                selecting_active_vessel_target,
+                L10N.CacheFormat("#Principia_MainWindow_TargetVessel_Select"));
+            if (selecting_active_vessel_target) {
+              selecting_target_celestial_ = false;
+            }
           }
-          if (FlightGlobals.fetch.VesselTarget?.GetVessel()) {
+          if (FlightGlobals.fetch.VesselTarget?.GetVessel() != null) {
             UnityEngine.GUILayout.Label(
                 L10N.CacheFormat("#Principia_MainWindow_TargetVessel_Name",
                                  FlightGlobals.fetch.VesselTarget.GetVessel().
@@ -204,7 +208,7 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
         // This will remove the "Select" UI so it must shrink.
         if (show_selection_ui_) {
           show_selection_ui_ = false;
-          Shrink();
+          ScheduleShrink();
         }
         selecting_active_vessel_target = false;
       }
@@ -218,18 +222,24 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
           if (UnityEngine.GUILayout.Button(
                   L10N.CacheFormat("#Principia_MainWindow_Declutter"),
                   GUILayoutWidth(5))) {
-            show_only_pinned_markers = true;
-            show_only_pinned_celestials = true;
+            show_unpinned_markers = false;
+            show_unpinned_celestials = false;
+            show_equipotentials = false;
           }
           UnityEngine.GUILayout.Label(
-              L10N.CacheFormat("#Principia_MainWindow_Declutter_ShowOnly"));
-          show_only_pinned_markers = UnityEngine.GUILayout.Toggle(
-              show_only_pinned_markers,
-              L10N.CacheFormat("#Principia_MainWindow_Declutter_PinnedMarkers"));
-          show_only_pinned_celestials = UnityEngine.GUILayout.Toggle(
-              show_only_pinned_celestials,
+              L10N.CacheFormat("#Principia_MainWindow_Declutter_Show"));
+          show_unpinned_markers = UnityEngine.GUILayout.Toggle(
+              show_unpinned_markers,
               L10N.CacheFormat(
-                  "#Principia_MainWindow_Declutter_PinnedCelestials"));
+                  "#Principia_MainWindow_Declutter_UnpinnedMarkers"));
+          show_unpinned_celestials = UnityEngine.GUILayout.Toggle(
+              show_unpinned_celestials,
+              L10N.CacheFormat(
+                  "#Principia_MainWindow_Declutter_UnpinnedCelestials"));
+          show_equipotentials = UnityEngine.GUILayout.Toggle(
+              show_equipotentials,
+              L10N.CacheFormat(
+                  "#Principia_MainWindow_Declutter_Equipotentials"));
         }
         using (new UnityEngine.GUILayout.HorizontalScope()) {
           flight_planner_.RenderButton();
@@ -436,7 +446,8 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
                          enabled: adaptive_step_parameters.HasValue)) {
         AdaptiveStepParameters new_adaptive_step_parameters =
             new AdaptiveStepParameters{
-                integrator_kind = adaptive_step_parameters.Value.integrator_kind,
+                integrator_kind =
+                    adaptive_step_parameters.Value.integrator_kind,
                 max_steps = prediction_steps,
                 length_integration_tolerance = prediction_length_tolerance,
                 speed_integration_tolerance = prediction_length_tolerance
@@ -447,14 +458,16 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
       }
       if (RenderSelector(prediction_steps_,
                          ref prediction_steps_index_,
-                         L10N.CacheFormat("#Principia_PredictionSettings_Steps"),
+                         L10N.CacheFormat(
+                             "#Principia_PredictionSettings_Steps"),
                          (i) => string.Format(Culture.culture,
                                               "{0:0.0e0}",
                                               prediction_steps_[i]),
                          enabled: adaptive_step_parameters.HasValue)) {
         AdaptiveStepParameters new_adaptive_step_parameters =
             new AdaptiveStepParameters{
-                integrator_kind = adaptive_step_parameters.Value.integrator_kind,
+                integrator_kind =
+                    adaptive_step_parameters.Value.integrator_kind,
                 max_steps = prediction_steps,
                 length_integration_tolerance = prediction_length_tolerance,
                 speed_integration_tolerance = prediction_length_tolerance
@@ -502,7 +515,7 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
     if (UnityEngine.GUILayout.Button(toggle)) {
       show = !show;
       if (!show) {
-        Shrink();
+        ScheduleShrink();
       }
     }
     if (show) {
@@ -517,12 +530,12 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
 
   private long prediction_steps => prediction_steps_[prediction_steps_index_];
 
-  private DifferentialSlider history_length_ = new DifferentialSlider(
+  private readonly DifferentialSlider history_length_ = new DifferentialSlider(
       label            :
           L10N.CacheFormat("#Principia_MainWindow_HistoryLength"),
       unit             : null,
-      log10_lower_rate : 0,
-      log10_upper_rate : 7,
+      log10_lower_rate : log10_history_lower_rate,
+      log10_upper_rate : log10_history_upper_rate,
       min_value        : 10,
       max_value        : double.PositiveInfinity,
       formatter        : Formatters.FormatMissionDuration,
@@ -536,7 +549,7 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
       {1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3, 1e4};
   private static readonly string[] prediction_length_tolerance_names_ =
       {"1 mm", "1 cm", "10 cm", "1 m", "10 m", "100 m", "1 km", "10 km"};
-  // Keep this consistent with |max_steps_in_prediction| in |plugin.cpp|.
+  // Keep this consistent with `max_steps_in_prediction` in `plugin.cpp`.
   private static readonly long[] prediction_steps_ = {
       1 << 2, 1 << 4, 1 << 6, 1 << 8, 1 << 10, 1 << 12, 1 << 14, 1 << 16,
       1 << 18, 1 << 20, 1 << 22, 1 << 24
@@ -544,6 +557,9 @@ internal class MainWindow : VesselSupervisedWindowRenderer {
 
   private const int default_prediction_length_tolerance_index = 1;
   private const int default_prediction_steps_index = 4;
+
+  private const double log10_history_lower_rate = 3.0;
+  private const double log10_history_upper_rate = 7.0;
 
   private readonly PrincipiaPluginAdapter adapter_;
   private readonly FlightPlanner flight_planner_;

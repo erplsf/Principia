@@ -2,8 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using KSP.Localization;
-
+using System.Runtime.CompilerServices;
+using UnityEngine.Profiling;
 using static principia.ksp_plugin_adapter.FrameType;
 
 namespace principia {
@@ -95,6 +95,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   // EulerSolver.
   CelestialBody last_main_body_;
   private int main_body_change_countdown_ = 1;
+  private bool celestial_terrains_were_validated_ = false;
 
   private PlanetariumCameraAdjuster planetarium_camera_adjuster_;
 
@@ -125,7 +126,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   internal UnityEngine.Color target_prediction_colour = XKCDColors.LightMauve;
   internal GLLines.Style target_prediction_style = GLLines.Style.Solid;
 
-  private Plotter plotter_;
+  private readonly Plotter plotter_;
 
   private readonly List<IntPtr> vessel_futures_ = new List<IntPtr>();
   private readonly EventVoidHolder event_void_holder_ = new EventVoidHolder();
@@ -145,7 +146,8 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   private int? last_guidance_manœuvre_ = null;
 
   private static Dictionary<CelestialBody, Orbit> unmodified_orbits_;
-  private static Dictionary<CelestialBody, double> unmodified_initial_rotations_;
+  private static Dictionary<CelestialBody, double>
+      unmodified_initial_rotations_;
 
   private Krakensbane krakensbane_;
 
@@ -214,14 +216,14 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
 
   // Work around the launch backflip issue encountered while releasing
   // Frobenius.
-  // The issue is that the position of a  |ForceHolder| collected in
-  // |FashionablyLate| or constructed in |JaiFailliAttendre| is made invalid by
-  // changes to world coordinates in |FloatingOrigin| by the time it is used in
-  // |WaitForFixedUpdate|.
+  // The issue is that the position of a  `ForceHolder` collected in
+  // `FashionablyLate` or constructed in `JaiFailliAttendre` is made invalid by
+  // changes to world coordinates in `FloatingOrigin` by the time it is used in
+  // `WaitForFixedUpdate`.
   // TODO(egg): This should be cleaned up a bit, e.g., by making the plugin and
-  // interface take the |World| lever arm directly, since the lever arm is what
-  // we use in |principia::ksp_plugin::Part|, and it is what we compute below:
-  // this would obviate the need to keep track of the |Part| and to adjust its
+  // interface take the `World` lever arm directly, since the lever arm is what
+  // we use in `principia::ksp_plugin::Part`, and it is what we compute below:
+  // this would obviate the need to keep track of the `Part` and to adjust its
   // position.
   class PartCentredForceHolder {
     public static PartCentredForceHolder FromPartForceHolder(
@@ -253,6 +255,14 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   private readonly MapNodePool map_node_pool_;
   private ManeuverNode guidance_node_;
 
+  // These need to be fields for communication between `LateUpdate` and
+  // `pre_cull`.
+  private TQP? prediction_collision_ = null;
+  private TQP? flight_plan_collision_ = null;
+
+  private readonly List<ManœuvreMarker> manœuvre_marker_pool_ =
+      new List<ManœuvreMarker>();
+
   // UI for the apocalypse notification.
   [KSPField(isPersistant = true)]
   private readonly Dialog apocalypse_dialog_ = new Dialog(persist_state: true);
@@ -272,10 +282,10 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   internal readonly ReferenceFrameSelector<PlottingFrameParameters>
       plotting_frame_selector_;
   [KSPField(isPersistant = true)]
-  private MainWindow main_window_;
+  private readonly MainWindow main_window_;
 
   public bool show_celestial_trajectory(CelestialBody celestial) {
-    return !main_window_.show_only_pinned_celestials ||
+    return main_window_.show_unpinned_celestials ||
            plotting_frame_selector_.pinned[celestial];
   }
 
@@ -340,7 +350,11 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     }
 
     map_node_pool_ = new MapNodePool(
-        show_only_pinned: () => main_window_.show_only_pinned_markers);
+        this,
+        visibility_modifiers: () => new MapNodePool.VisibilityModifiers(
+            show_unpinned: main_window_.show_unpinned_markers,
+            can_hover: !ManœuvreMarker.has_interacting_marker)
+        );
     flight_planner_ = new FlightPlanner(this, PredictedVessel);
     orbit_analyser_ = new CurrentOrbitAnalyser(this, PredictedVessel);
     plotting_frame_selector_ =
@@ -379,11 +393,29 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     }
   }
 
+  // If there is a target vessel, and that vessel is known to the plugin,
+  // returns it.  Otherwise returns null.
+  private Vessel TargetVessel() {
+    Vessel target = FlightGlobals.fetch.VesselTarget?.GetVessel();
+    string target_id = target?.id.ToString();
+    if (target_id != null && plugin_.HasVessel(target_id)) {
+      return target;
+    } else {
+      return null;
+    }
+  }
+
+  // Same as above but returns the GUID.
+  private string TargetVesselGuid() {
+    return TargetVessel()?.id.ToString();
+  }
+
+
   private delegate void BodyProcessor(CelestialBody body);
 
   private delegate void VesselProcessor(Vessel vessel);
 
-  // Applies |process_body| to all bodies but the sun in the tree of celestial
+  // Applies `process_body` to all bodies but the sun in the tree of celestial
   // bodies, in topological order.
   private void ApplyToBodyTree(BodyProcessor process_body) {
     // Tree traversal (DFS, not that it matters).
@@ -401,10 +433,14 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   }
 
   private void ApplyToVesselsOnRails(VesselProcessor process_vessel) {
+    // `process_vessels` may touch `Transform`s, so disable syncing.
+    UnityEngine.Physics.autoSyncTransforms = false;
     foreach (Vessel vessel in FlightGlobals.Vessels.Where(
         is_manageable_on_rails)) {
       process_vessel(vessel);
     }
+    UnityEngine.Physics.SyncTransforms();
+    UnityEngine.Physics.autoSyncTransforms = true;
   }
 
   private void UpdateBody(CelestialBody body, double universal_time) {
@@ -414,14 +450,14 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     QP from_parent = plugin_.CelestialFromParent(body.flightGlobalsIndex);
     // TODO(egg): Some of this might be be superfluous and redundant.
     Orbit original = body.orbit;
-    Orbit copy = new Orbit(original.inclination,
-                           original.eccentricity,
-                           original.semiMajorAxis,
-                           original.LAN,
-                           original.argumentOfPeriapsis,
-                           original.meanAnomalyAtEpoch,
-                           original.epoch,
-                           original.referenceBody);
+    var copy = new Orbit(original.inclination,
+                         original.eccentricity,
+                         original.semiMajorAxis,
+                         original.LAN,
+                         original.argumentOfPeriapsis,
+                         original.meanAnomalyAtEpoch,
+                         original.epoch,
+                         original.referenceBody);
     copy.UpdateFromStateVectors((Vector3d)from_parent.q,
                                 (Vector3d)from_parent.p,
                                 copy.referenceBody,
@@ -446,44 +482,55 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
 
   private void UpdatePredictions() {
     Vessel main_vessel = PredictedVessel();
-    bool ready_to_draw_active_vessel_trajectory =
-        main_vessel != null && MapView.MapIsEnabled;
 
-    if (ready_to_draw_active_vessel_trajectory) {
-      string target_id =
-          FlightGlobals.fetch.VesselTarget?.GetVessel()?.id.ToString();
+    if (MapView.MapIsEnabled) {
+      string main_vessel_guid = main_vessel?.id.ToString();
       if (!plotting_frame_selector_.target_frame_selected &&
-          target_id != null &&
-          plugin_.HasVessel(target_id)) {
-        // TODO(phl): It's not nice that we are overriding the target vessel
-        // parameters.
-        AdaptiveStepParameters adaptive_step_parameters =
-            plugin_.VesselGetPredictionAdaptiveStepParameters(
-                main_vessel.id.ToString());
-        plugin_.VesselSetPredictionAdaptiveStepParameters(
-            target_id,
-            adaptive_step_parameters);
-        plugin_.UpdatePrediction(new string[]
-                                     {main_vessel.id.ToString(), target_id});
-      } else {
-        plugin_.UpdatePrediction(new string[]{main_vessel.id.ToString()});
+          TargetVesselGuid() is string target_guid) {
+        if (main_vessel_guid == null) {
+          plugin_.UpdatePrediction(new string[]{ target_guid });
+        } else {
+          // TODO(phl): It's not nice that we are overriding the target vessel
+          // parameters.
+          AdaptiveStepParameters adaptive_step_parameters =
+              plugin_.VesselGetPredictionAdaptiveStepParameters(
+                  main_vessel_guid);
+          plugin_.VesselSetPredictionAdaptiveStepParameters(
+              target_guid,
+              adaptive_step_parameters);
+          plugin_.UpdatePrediction(
+              new string[]{ main_vessel_guid, target_guid });
+        }
+      } else if (main_vessel_guid != null) {
+        plugin_.UpdatePrediction(new string[]{ main_vessel_guid });
       }
     }
   }
 
   private void UpdateVessel(Vessel vessel, double universal_time) {
-    if (plugin_.HasVessel(vessel.id.ToString())) {
+    string vessel_guid = vessel.id.ToString();
+    if (plugin_.HasVessel(vessel_guid)) {
       QP from_parent = plugin_.VesselFromParent(
           vessel.mainBody.flightGlobalsIndex,
-          vessel.id.ToString());
+          vessel_guid);
       vessel.orbit.UpdateFromStateVectors(pos : (Vector3d)from_parent.q,
                                           vel : (Vector3d)from_parent.p,
                                           refBody : vessel.orbit.referenceBody,
                                           UT : universal_time);
       if (vessel.loaded) {
+        Part root_part = vessel.rootPart;
+        UnityEngine.Rigidbody root_part_rb = root_part.rb;
+        var origin = new Origin{
+            reference_part_is_at_origin = true,
+            reference_part_is_unmoving = true,
+            main_body_centre_in_world =
+                (XYZ)FlightGlobals.ActiveVessel.mainBody.position,
+            reference_part_id = root_part.flightID
+        };
         foreach (Part part in vessel.parts.Where(part => part.rb != null &&
                                                    plugin_.PartIsTruthful(
                                                        part.flightID))) {
+          UnityEngine.Rigidbody part_rb = part.rb;
           // TODO(egg): What if the plugin doesn't have the part? this seems
           // brittle.
           // NOTE(egg): I am not sure what the origin is here, as we are
@@ -493,25 +540,20 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           // TODO(egg): check that the vessel is moved *after* this.  Shouldn't
           // we be calling vessel.orbitDriver.updateFromParameters() after
           // setting the orbit anyway?
-          QPRW part_actual_motion = plugin_.PartGetActualRigidMotion(
-              part.flightID,
-              new Origin{
-                  reference_part_is_at_origin = true,
-                  reference_part_is_unmoving = true,
-                  main_body_centre_in_world =
-                      (XYZ)FlightGlobals.ActiveVessel.mainBody.position,
-                  reference_part_id = vessel.rootPart.flightID
-              });
-          part.rb.position = vessel.rootPart.rb.position +
-                             (Vector3d)part_actual_motion.qp.q;
-          part.rb.transform.position = vessel.rootPart.rb.position +
-                                       (Vector3d)part_actual_motion.qp.q;
-          part.rb.rotation = (UnityEngine.QuaternionD)part_actual_motion.r;
-          part.rb.transform.rotation =
-              (UnityEngine.QuaternionD)part_actual_motion.r;
-          part.rb.velocity = vessel.rootPart.rb.velocity +
-                             (Vector3d)part_actual_motion.qp.p;
-          part.rb.angularVelocity = (Vector3d)part_actual_motion.w;
+          QPRW part_actual_motion =
+              plugin_.PartGetActualRigidMotion(part.flightID, origin);
+          QP part_actual_degrees_of_freedom = part_actual_motion.qp;
+          var part_position = (Vector3d)part_actual_degrees_of_freedom.q;
+          var part_velocity = (Vector3d)part_actual_degrees_of_freedom.p;
+          var part_rotation = (UnityEngine.QuaternionD)part_actual_motion.r;
+          var part_angular_velocity = (Vector3d)part_actual_motion.w;
+          part_rb.position = root_part_rb.position + part_position;
+          part_rb.rotation = part_rotation;
+          part_rb.transform.SetPositionAndRotation(
+              root_part_rb.position + part_position,
+              part_rotation);
+          part_rb.velocity = root_part_rb.velocity + part_velocity;
+          part_rb.angularVelocity = part_angular_velocity;
         }
       }
     }
@@ -557,10 +599,16 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     return UnmanageabilityReasons(vessel) == null;
   }
 
-  public static bool is_lit_solid_booster(ModuleEngines module) {
-    return module != null &&
-           module.EngineIgnited &&
-           module.engineType == EngineType.SolidBooster;
+  public static bool is_lit_solid_booster(Part part) {
+    foreach (PartModule module in part.Modules) {
+      var module_engines = module as ModuleEngines;
+      if (module_engines != null &&
+          module_engines.EngineIgnited &&
+          module_engines.engineType == EngineType.SolidBooster) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private string UnmanageabilityReasons(Vessel vessel) {
@@ -649,7 +697,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     reset_rsas_target_ = false;
   }
 
-  // Returns false and nulls |texture| if the file does not exist.
+  // Returns false and nulls `texture` if the file does not exist.
   public static bool LoadTextureIfExists(out UnityEngine.Texture texture,
                                          string path) {
     string full_path =
@@ -682,12 +730,55 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     }
   }
 
+  public static double RadiusAt(CelestialBody centre,
+                                double latitude,
+                                double longitude) {
+    double altitude = 0;
+    try {
+      altitude = centre.TerrainAltitude(latitude,
+                                        longitude,
+                                        allowNegative: !centre.ocean);
+    } catch (Exception e) {
+      Log.Fatal("Terrain system raised exception " + e.ToString() +
+                " when computing altitude at latitude " +
+                latitude +
+                ", longitude " +
+                longitude +
+                " for celestial " +
+                centre.name +
+                "; you are probably using a mod incompatible with Principia");
+    }
+    if (double.IsNaN(altitude)) {
+      Log.Fatal("Terrain system returned NaN for altitude at latitude " +
+                latitude +
+                ", longitude " +
+                longitude +
+                " for celestial " +
+                centre.name +
+                "; you are probably using a mod incompatible with Principia");
+    }
+    if (double.IsNaN(centre.Radius)) {
+      Log.Fatal("Radius is NaN for celestial " + centre.name);
+    }
+    return altitude + centre.Radius;
+  }
+
+  [MethodImpl(MethodImplOptions.NoOptimization)]
+  public static void ValidateCelestialTerrain(CelestialBody centre,
+                                              Random random) {
+    for (int i = 0; i < 5; ++i) {
+      double latitude = random.NextDouble() * 360.0 - 180.0;
+      double longitude = random.NextDouble() * 360.0 - 180.0;
+      RadiusAt(centre, latitude: latitude, longitude: longitude);
+    }
+  }
+
   #region ScenarioModule lifecycle
 
-  // These functions override virtual ones from |ScenarioModule|, but it seems
+  // These functions override virtual ones from `ScenarioModule`, but it seems
   // that they're actually called by reflection, so that bad things happen
-  // if you don't have, e.g., a function called |OnAwake()| that calls
-  // |base.OnAwake()|.  It doesn't matter whether the functions are public or
+  // if you don't have, e.g., a function called `OnAwake()` that calls
+  // `base.OnAwake()`.  It doesn't matter whether the functions are public or
   // private, overriding or hiding though.
 
   public override void OnAwake() {
@@ -889,11 +980,18 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   }
 
   private void LateUpdate() {
+    string main_vessel_guid = PredictedVessel()?.id.ToString();
+    RenderTrajectoryCollisions(main_vessel_guid,
+                               out prediction_collision_,
+                               out flight_plan_collision_);
+
     if (map_renderer_ == null) {
       map_renderer_ = PlanetariumCamera.Camera.gameObject.
           AddComponent<RenderingActions>();
-      map_renderer_.pre_cull = () => { RenderTrajectories(); };
-      map_renderer_.post_render = () => { RenderManœuvreMarkers(); };
+      map_renderer_.pre_cull = () => {
+        RenderTrajectories();
+        RenderManœuvreMarkers();
+      };
     }
 
     if (galaxy_cube_rotator_ == null) {
@@ -916,6 +1014,31 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       HandleMapViewClicks();
     }
 
+    RenderNavballAndAccessories();
+
+    if (MapView.MapIsEnabled) {
+      XYZ sun_world_position = (XYZ)Planetarium.fetch.Sun.position;
+      if (main_vessel_guid != null) {
+        RenderPredictionMarkers(main_vessel_guid,
+                                prediction_collision_,
+                                sun_world_position);
+        if (plugin_.FlightPlanExists(main_vessel_guid)) {
+          RenderFlightPlanMarkers(main_vessel_guid,
+                                  flight_plan_collision_,
+                                  sun_world_position);
+        }
+      }
+      if (FlightGlobals.ActiveVessel != null &&
+          !plotting_frame_selector_.target_frame_selected &&
+          TargetVesselGuid() is string target_id) {
+        RenderPredictionMarkers(target_id,
+                                prediction_collision: null,
+                                sun_world_position);
+      }
+    }
+  }
+
+  private void RenderNavballAndAccessories() {
     override_rsas_target_ = false;
     Vessel active_vessel = FlightGlobals.ActiveVessel;
     if (active_vessel != null) {
@@ -923,6 +1046,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       if (!PluginRunning()) {
         return;
       }
+      string active_vessel_guid = active_vessel.id.ToString();
 
       // Design for compatibility with FAR: if we are in surface mode in an
       // atmosphere, FAR gives options to display the IAS, EAS, and Mach number,
@@ -951,7 +1075,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           plotting_frame_selector_.target_frame_selected) {
         bool plugin_has_active_manageable_vessel =
             has_active_manageable_vessel() &&
-            plugin_.HasVessel(active_vessel.id.ToString());
+            plugin_.HasVessel(active_vessel_guid);
 
         KSP.UI.Screens.Flight.SpeedDisplay speed_display =
             KSP.UI.Screens.Flight.SpeedDisplay.Instance;
@@ -959,14 +1083,20 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
             speed_display?.textSpeed != null &&
             !ferram_owns_the_speed_display) {
           speed_display.textTitle.text = plotting_frame_selector_.NavballName();
-          var active_vessel_velocity =
-              plugin_has_active_manageable_vessel
-                  ? (Vector3d)plugin_.VesselVelocity(
-                      active_vessel.id.ToString())
-                  : (Vector3d)plugin_.UnmanageableVesselVelocity(
-                      new QP{q = (XYZ)active_vessel.orbit.pos,
-                          p = (XYZ)active_vessel.orbit.vel},
-                      active_vessel.orbit.referenceBody.flightGlobalsIndex);
+          var active_vessel_velocity = plugin_has_active_manageable_vessel
+                                           ? (Vector3d)plugin_.VesselVelocity(
+                                               active_vessel_guid)
+                                           : (Vector3d)plugin_.
+                                               UnmanageableVesselVelocity(
+                                                   new QP{
+                                                       q = (XYZ)active_vessel.
+                                                           orbit.pos,
+                                                       p = (XYZ)active_vessel.
+                                                           orbit.vel
+                                                   },
+                                                   active_vessel.orbit.
+                                                       referenceBody.
+                                                       flightGlobalsIndex);
           speed_display.textSpeed.text = L10N.CacheFormat(
               "#Principia_SpeedDisplayText",
               active_vessel_velocity.magnitude.ToString("F1"));
@@ -980,14 +1110,11 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         }
 
         // Orient the Frenet trihedron.
-        var prograde =
-            (Vector3d)plugin_.VesselTangent(active_vessel.id.ToString());
-        var radial =
-            (Vector3d)plugin_.VesselNormal(active_vessel.id.ToString());
+        var prograde = (Vector3d)plugin_.VesselTangent(active_vessel_guid);
+        var radial = (Vector3d)plugin_.VesselNormal(active_vessel_guid);
         // Yes, the astrodynamicist's normal is the mathematician's binormal.
         // Don't ask.
-        var normal =
-            (Vector3d)plugin_.VesselBinormal(active_vessel.id.ToString());
+        var normal = (Vector3d)plugin_.VesselBinormal(active_vessel_guid);
 
         SetNavballVector(navball_.progradeVector, prograde);
         SetNavballVector(navball_.radialInVector, radial);
@@ -1013,11 +1140,11 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
               break;
             // NOTE(egg): For reasons that are unlikely to become clear again,
             // the button labeled with the radial in icon sets the autopilot
-            // mode to |RadialOut|, and vice-versa.  As a result, we must set
+            // mode to `RadialOut`, and vice-versa.  As a result, we must set
             // the target to the outwards radial (negative normal) vector if the
-            // mode is |RadialIn|.  Contrast with the navball vectors above,
+            // mode is `RadialIn`.  Contrast with the navball vectors above,
             // which do not exhibit this inconsistency (thus where
-            // |radialInVector| is set to |radial|).
+            // `radialInVector` is set to `radial`).
             case VesselAutopilot.AutopilotMode.RadialIn:
               rsas_target_ = -radial;
               break;
@@ -1067,7 +1194,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
             vessel.rootPart.rb.angularVelocity);
       }
 
-      // TODO(egg): Set the degrees of freedom of the origin of |World| (by
+      // TODO(egg): Set the degrees of freedom of the origin of `World` (by
       // toying with Krakensbane and FloatingOrigin) here.
 
       // Now we let the game and Unity do their thing.  Among other things,
@@ -1123,6 +1250,10 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         yield break;
       }
 
+      // We are going to touch plenty of `Transform`s, so we will prevent
+      // Unity from syncing with the physics system all the time.
+      UnityEngine.Physics.autoSyncTransforms = false;
+
       double Δt = Planetarium.TimeScale * Planetarium.fetch.fixedDeltaTime;
 
       QP main_body_degrees_of_freedom = new QP{
@@ -1133,92 +1264,95 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       };
 
       // NOTE(egg): Inserting vessels and parts has to occur in
-      // |WaitForFixedUpdate|, since some may be destroyed (by collisions) during
+      // `WaitForFixedUpdate`, since some may be destroyed (by collisions) during
       // the physics step.  See also #1281.
       foreach (Vessel vessel in FlightGlobals.Vessels) {
+        int main_body_index = vessel.mainBody.flightGlobalsIndex;
+        string vessel_guid = vessel.id.ToString();
         string unmanageability_reasons = UnmanageabilityReasons(vessel);
         if (unmanageability_reasons != null) {
-          if (plugin_.HasVessel(vessel.id.ToString())) {
+          if (plugin_.HasVessel(vessel_guid)) {
             Log.Info("Removing vessel " + vessel.vesselName + "(" + vessel.id +
                      ")" + " because " + unmanageability_reasons);
           }
           continue;
         }
 
-        plugin_.InsertOrKeepVessel(vessel.id.ToString(),
+        plugin_.InsertOrKeepVessel(vessel_guid,
                                    vessel.vesselName,
-                                   vessel.mainBody.flightGlobalsIndex,
+                                   main_body_index,
                                    !vessel.packed,
                                    out bool inserted);
         if (!vessel.packed) {
+          Profiler.BeginSample("InsertOrKeepLoadedPart");
           foreach (Part part in vessel.parts.Where(PartIsFaithful)) {
-            QP degrees_of_freedom;
-            if (part_id_to_degrees_of_freedom_.ContainsKey(part.flightID)) {
-              degrees_of_freedom =
-                  part_id_to_degrees_of_freedom_[part.flightID];
-            } else {
+            UnityEngine.Rigidbody part_rb = part.rb;
+            uint part_id = part.flightID;
+            if (!part_id_to_degrees_of_freedom_.TryGetValue(
+                    part_id,
+                    out QP degrees_of_freedom)) {
               // Assumptions about the invariants of KSP will invariably fail.
               // This is a graceful fallback.
               Log.Error("Unpacked part " + part.name + " (" +
-                        part.flightID.ToString("X") +
+                        part_id.ToString("X") +
                         ") appeared between BetterLateThanNever and " +
                         "WaitForFixedUpdate.  Linearly extrapolating its " +
                         "position at the previous frame.");
               degrees_of_freedom = new QP{
-                  q = (XYZ)((Vector3d)part.rb.position -
-                            Δt * (Vector3d)part.rb.velocity),
-                  p = (XYZ)(Vector3d)part.rb.velocity
+                  q = (XYZ)((Vector3d)part_rb.position -
+                            Δt * (Vector3d)part_rb.velocity),
+                  p = (XYZ)part_rb.velocity
               };
             }
             // In the first few frames after spawning a Kerbal, its physicsMass is
             // 0; we use its rb.mass instead.
             // NOTE(egg): the physics engine does not move the celestials, so it
-            // is fine to use |main_body_degrees_of_freedom| here rather than to
-            // store it during |FixedUpdate| or one of its timings.
+            // is fine to use `main_body_degrees_of_freedom` here rather than to
+            // store it during `FixedUpdate` or one of its timings.
             plugin_.InsertOrKeepLoadedPart(
-                part.flightID,
+                part_id,
                 part.name,
-                part.physicsMass == 0 ? part.rb.mass : part.physicsMass,
-                (XYZ)(Vector3d)part.rb.centerOfMass,
-                (XYZ)(Vector3d)part.rb.inertiaTensor,
-                (WXYZ)(UnityEngine.QuaternionD)part.rb.inertiaTensorRotation,
-                (from PartModule module in part.Modules
-                 select module as ModuleEngines).Any(is_lit_solid_booster),
-                vessel.id.ToString(),
-                vessel.mainBody.flightGlobalsIndex,
+                part.physicsMass == 0 ? part_rb.mass : part.physicsMass,
+                (XYZ)part_rb.centerOfMass,
+                (XYZ)part_rb.inertiaTensor,
+                (WXYZ)part_rb.inertiaTensorRotation,
+                is_lit_solid_booster(part),
+                vessel_guid,
+                main_body_index,
                 main_body_degrees_of_freedom,
                 degrees_of_freedom,
-                (WXYZ)(UnityEngine.QuaternionD)part.rb.rotation,
-                (XYZ)(Vector3d)part.rb.angularVelocity,
+                (WXYZ)part_rb.rotation,
+                (XYZ)part_rb.angularVelocity,
                 Δt);
-            if (part_id_to_intrinsic_torque_.ContainsKey(part.flightID)) {
-              plugin_.PartApplyIntrinsicTorque(part.flightID,
-                                               (XYZ)part_id_to_intrinsic_torque_
-                                                   [part.flightID]);
+            if (part_id_to_intrinsic_torque_.TryGetValue(
+                    part_id,
+                    out Vector3d intrinsic_torque)) {
+              plugin_.PartApplyIntrinsicTorque(part_id, (XYZ)intrinsic_torque);
             }
-            if (part_id_to_intrinsic_force_.ContainsKey(part.flightID)) {
+            if (part_id_to_intrinsic_force_.TryGetValue(part_id,
+                  out Vector3d intrinsic_force)) {
               // When a Kerbal is doing an EVA and holding on to a ladder, the
               // ladder imbues them with their weight at the location of the
               // vessel to which the ladder is attached.  This leads to fantastic
               // effects where doing an EVA accelerates the vessel, see #1415.
               // Just say no to stupidity.
               if (!(vessel.isEVA && vessel.evaController.OnALadder)) {
-                plugin_.PartApplyIntrinsicForce(
-                    part.flightID,
-                    (XYZ)part_id_to_intrinsic_force_[part.flightID]);
+                plugin_.PartApplyIntrinsicForce(part_id, (XYZ)intrinsic_force);
               }
             }
-            if (part_id_to_intrinsic_forces_.ContainsKey(part.flightID)) {
-              foreach (var part_centred_force in part_id_to_intrinsic_forces_[
-                  part.flightID]) {
+            if (part_id_to_intrinsic_forces_.TryGetValue(part_id,
+                    out PartCentredForceHolder[] intrinsic_forces)) {
+              foreach (var part_centred_force in intrinsic_forces) {
                 plugin_.PartApplyIntrinsicForceAtPosition(
-                    part.flightID,
+                    part_id,
                     (XYZ)part_centred_force.force,
                     (XYZ)part_centred_force.lever_arm);
               }
             }
           }
+          Profiler.EndSample();
         } else if (inserted) {
+          Profiler.BeginSample("InsertUnloadedPart");
           var parts = vessel.protoVessel.protoPartSnapshots;
           // For reasons that are unclear, the asteroid spawning code sometimes
           // generates the same flightID twice; we regenerate the flightID on
@@ -1237,12 +1371,13 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           foreach (ProtoPartSnapshot part in parts) {
             plugin_.InsertUnloadedPart(part.flightID,
                                        part.partName,
-                                       vessel.id.ToString(),
+                                       vessel_guid,
                                        new QP{
                                            q = (XYZ)vessel.orbit.pos,
                                            p = (XYZ)vessel.orbit.vel
                                        });
           }
+          Profiler.EndSample();
         }
       }
 
@@ -1251,10 +1386,10 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       // The collisions are reported by the
       // CollisionReporter.OnCollisionEnter|Stay events, which occurred while we
       // yielded.
-      // Here, the |CollisionReporter.collisions| are the collisions that occurred
+      // Here, the `CollisionReporter.collisions` are the collisions that occurred
       // in the physics simulation.
       foreach (Vessel vessel1 in FlightGlobals.Vessels.Where(
-          v => !v.packed && is_manageable(v))) {
+                   v => !v.packed && is_manageable(v))) {
         if (plugin_.HasVessel(vessel1.id.ToString())) {
           if (vessel1.isEVA &&
               (vessel1.evaController.OnALadder ||
@@ -1276,6 +1411,8 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
               plugin_.ReportGroundCollision(vessel1.rootPart.flightID);
             }
           }
+
+          Profiler.BeginSample("ReportGroundCollision");
           foreach (Part part1 in vessel1.parts.Where(PartIsFaithful)) {
             if (part1.Modules.OfType<ModuleWheelBase>().
                 Any(wheel => wheel.isGrounded)) {
@@ -1285,9 +1422,9 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
             }
             var collision_reporter =
                 part1.gameObject.GetComponent<CollisionReporter>();
-            if (part1.gameObject.GetComponent<CollisionReporter>() == null) {
-              // This would only happen if |part1| had been added after
-              // |BetterLateThanNever|, but we never know what the game will throw
+            if (collision_reporter == null) {
+              // This would only happen if `part1` had been added after
+              // `BetterLateThanNever`, but we never know what the game will throw
               // at us.
               continue;
             }
@@ -1295,7 +1432,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
               var collider = collision.collider;
               if (collider == null) {
                 // This happens, albeit quite rarely, see #1447.  When it happens,
-                // the null collider remains in |currentCollisions| until the next
+                // the null collider remains in `currentCollisions` until the next
                 // scene change, so we do not log, otherwise we would spam.
                 continue;
               }
@@ -1312,7 +1449,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
                 // point in reporting this collision; this also causes issues
                 // where disappearing kerbals collide with themselves.
                 // NOTE(egg): It is unclear whether this is needed now that we
-                // have the |CollisionReporter|.
+                // have the `CollisionReporter`.
                 continue;
               }
               if (part1.State == PartStates.DEAD ||
@@ -1322,7 +1459,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
               if (vessel2 != null) {
                 if (is_unready_kerbal(vessel2)) {
                   // A Kerbal that just started an EVA and is not ready yet.  If
-                  // we let it collide with |vessel1|, it will cause that vessel
+                  // we let it collide with `vessel1`, it will cause that vessel
                   // to become unmanageable and be removed from the plugin.  Of
                   // course, the vessel will come back once the Kerbal is ready,
                   // but at that point we'll have to trust the position given by
@@ -1347,11 +1484,13 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
               }
             }
           }
+          Profiler.EndSample();
         }
       }
 
       plugin_.FreeVesselsAndPartsAndCollectPileUps(Δt);
 
+      Profiler.BeginSample("PartSetApparentRigidMotion");
       foreach (Vessel vessel in FlightGlobals.Vessels.Where(v => !v.packed)) {
         if (!plugin_.HasVessel(vessel.id.ToString())) {
           continue;
@@ -1359,16 +1498,18 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         foreach (Part part in vessel.parts.Where(PartIsFaithful)) {
           if (main_body_change_countdown_ == 0 &&
               last_main_body_ == FlightGlobals.ActiveVessel?.mainBody) {
+            UnityEngine.Rigidbody part_rb = part.rb;
             plugin_.PartSetApparentRigidMotion(
                 part.flightID,
                 // TODO(egg): use the centre of mass.
-                new QP{q = (XYZ)(Vector3d)part.rb.position,
-                    p = (XYZ)(Vector3d)part.rb.velocity},
-                (WXYZ)(UnityEngine.QuaternionD)part.rb.rotation,
-                (XYZ)(Vector3d)part.rb.angularVelocity);
+                new QP{q = (XYZ)part_rb.position,
+                       p = (XYZ)part_rb.velocity},
+                (WXYZ)part_rb.rotation,
+                (XYZ)part_rb.angularVelocity);
           }
         }
       }
+      Profiler.EndSample();
 
       // Advance the lagging vessels and kill those which collided with a
       // celestial.
@@ -1393,6 +1534,17 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           plugin_.HasVessel(FlightGlobals.ActiveVessel.id.ToString())) {
         Vector3d q_correction_at_root_part = Vector3d.zero;
         Vector3d v_correction_at_root_part = Vector3d.zero;
+        CelestialBody main_body = FlightGlobals.ActiveVessel.mainBody;
+        Part root_part = FlightGlobals.ActiveVessel.rootPart;
+        Origin origin = new Origin{
+            reference_part_is_at_origin  = FloatingOrigin.fetch.continuous,
+            reference_part_is_unmoving =
+                krakensbane_.FrameVel != Vector3d.zero,
+            main_body_centre_in_world = (XYZ)main_body.position,
+            reference_part_id = root_part.flightID
+        };
+
+        Profiler.BeginSample("PartGetActualRigidMotion");
         foreach (Vessel vessel in FlightGlobals.Vessels.Where(v => !v.packed)) {
           // TODO(egg): if I understand anything, there should probably be a
           // special treatment for loaded packed vessels.  I don't understand
@@ -1400,65 +1552,54 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           if (!plugin_.HasVessel(vessel.id.ToString())) {
             continue;
           }
+
           foreach (Part part in vessel.parts.Where(PartIsFaithful)) {
-            QPRW part_actual_motion = plugin_.PartGetActualRigidMotion(
-                part.flightID,
-                new Origin{
-                    reference_part_is_at_origin  =
-                        FloatingOrigin.fetch.continuous,
-                    reference_part_is_unmoving =
-                        krakensbane_.FrameVel != Vector3d.zero,
-                    main_body_centre_in_world = (XYZ)FlightGlobals.ActiveVessel.
-                        mainBody.position,
-                    reference_part_id =
-                        FlightGlobals.ActiveVessel.rootPart.flightID
-                });
-            if (part == FlightGlobals.ActiveVessel.rootPart) {
-              QP part_actual_degrees_of_freedom = part_actual_motion.qp;
-              q_correction_at_root_part =
-                  (Vector3d)part_actual_degrees_of_freedom.q - part.rb.position;
-              v_correction_at_root_part =
-                  (Vector3d)part_actual_degrees_of_freedom.p - part.rb.velocity;
+            UnityEngine.Rigidbody part_rb = part.rb;
+            QPRW part_actual_motion =
+                plugin_.PartGetActualRigidMotion(part.flightID, origin);
+            QP part_actual_degrees_of_freedom = part_actual_motion.qp;
+            var part_position = (Vector3d)part_actual_degrees_of_freedom.q;
+            var part_velocity = (Vector3d)part_actual_degrees_of_freedom.p;
+            var part_rotation = (UnityEngine.QuaternionD)part_actual_motion.r;
+            var part_angular_velocity = (Vector3d)part_actual_motion.w;
+            if (part == root_part) {
+              q_correction_at_root_part = part_position - part_rb.position;
+              v_correction_at_root_part = part_velocity - part_rb.velocity;
             }
 
             // TODO(egg): use the centre of mass.  Here it's a bit tedious, some
             // transform nonsense must probably be done.
-            // NOTE(egg): we must set the position and rotation of the |Transform|
-            // as well as that of the |RigidBody| because we are performing this
-            // correction after the physics step.
+            // NOTE(egg): we must set the position and rotation of the
+            // `Transform` as well as that of the `RigidBody` because we are
+            // performing this correction after the physics step.
             // See https://github.com/mockingbirdnest/Principia/pull/1427,
             // https://github.com/mockingbirdnest/Principia/issues/1307#issuecomment-478337241.
-            part.rb.position = (Vector3d)part_actual_motion.qp.q;
-            part.rb.transform.position = (Vector3d)part_actual_motion.qp.q;
-            part.rb.rotation = (UnityEngine.QuaternionD)part_actual_motion.r;
-            part.rb.transform.rotation =
-                (UnityEngine.QuaternionD)part_actual_motion.r;
+            part_rb.position = part_position;
+            part_rb.rotation = part_rotation;
+            part_rb.transform.SetPositionAndRotation(
+                part_position,
+                part_rotation);
 
-            part.rb.velocity = (Vector3d)part_actual_motion.qp.p;
-            part.rb.angularVelocity = (Vector3d)part_actual_motion.w;
+            part_rb.velocity = part_velocity;
+            part_rb.angularVelocity = part_angular_velocity;
           }
         }
+        Profiler.EndSample();
+
         foreach (physicalObject physical_object in FlightGlobals.
             physicalObjects.Where(o => o != null && o.rb != null)) {
           // TODO(egg): This is no longer sensible.
-          physical_object.rb.position += q_correction_at_root_part;
-          physical_object.rb.transform.position += q_correction_at_root_part;
-          physical_object.rb.velocity += v_correction_at_root_part;
+          UnityEngine.Rigidbody physical_object_rb = physical_object.rb;
+          physical_object_rb.position += q_correction_at_root_part;
+          physical_object_rb.transform.position += q_correction_at_root_part;
+          physical_object_rb.velocity += v_correction_at_root_part;
         }
         QP main_body_dof = plugin_.CelestialWorldDegreesOfFreedom(
-            FlightGlobals.ActiveVessel.mainBody.flightGlobalsIndex,
-            new Origin{
-                reference_part_is_at_origin  = FloatingOrigin.fetch.continuous,
-                reference_part_is_unmoving =
-                    krakensbane_.FrameVel != Vector3d.zero,
-                main_body_centre_in_world =
-                    (XYZ)FlightGlobals.ActiveVessel.mainBody.position,
-                reference_part_id = FlightGlobals.ActiveVessel.rootPart.flightID
-            },
+            main_body.flightGlobalsIndex,
+            origin,
             plugin_.CurrentTime());
         krakensbane.FrameVel = -(Vector3d)main_body_dof.p;
-        Vector3d offset = (Vector3d)main_body_dof.q -
-                          FlightGlobals.ActiveVessel.mainBody.position;
+        Vector3d offset = (Vector3d)main_body_dof.q - main_body.position;
         // We cannot use FloatingOrigin.SetOffset to move the world here, because
         // as far as I can tell, that does not move the bubble relative to the
         // rest of the universe.
@@ -1481,6 +1622,9 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       } else if (main_body_change_countdown_ > 0) {
         --main_body_change_countdown_;
       }
+
+      UnityEngine.Physics.SyncTransforms();
+      UnityEngine.Physics.autoSyncTransforms = true;
     } catch (Exception e) {
       Log.Fatal(e.ToString());
     }
@@ -1513,9 +1657,10 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           }
         }
         foreach (var vessel in FlightGlobals.Vessels) {
-          if (vessel.packed && plugin_.HasVessel(vessel.id.ToString())) {
+          string vessel_guid = vessel.id.ToString();
+          if (vessel.packed && plugin_.HasVessel(vessel_guid)) {
             vessel_futures_.Add(
-                plugin_.FutureCatchUpVessel(vessel.id.ToString()));
+                plugin_.FutureCatchUpVessel(vessel_guid));
           }
         }
       }
@@ -1533,7 +1678,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         continue;
       }
       vessel.precalc.enabled = true;
-      // In stock this is equivalent to |FixedUpdate()|.  With
+      // In stock this is equivalent to `FixedUpdate()`.  With
       // ModularFlightIntegrator's ModularVesselPrecalculate, which gets run
       // in TimingPre like us, this comes with a flag that ensures it only gets
       // run once.
@@ -1613,12 +1758,10 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
                 (Vector3d)Interface.AngularMomentumFromAngularVelocity(
                     world_angular_velocity: (XYZ)Δω_world,
                     moments_of_inertia_in_tonnes:
-                    (XYZ)(Vector3d)part.rb.inertiaTensor,
+                    (XYZ)part.rb.inertiaTensor,
                     principal_axes_rotation:
-                    (WXYZ)(UnityEngine.QuaternionD)part.rb.
-                        inertiaTensorRotation,
-                    part_rotation: (WXYZ)(UnityEngine.QuaternionD)part.rb.
-                        rotation);
+                    (WXYZ)part.rb.inertiaTensorRotation,
+                    part_rotation: (WXYZ)part.rb.rotation);
             double Δt = Planetarium.TimeScale *
                         Planetarium.fetch.fixedDeltaTime;
             parachute_torque = ΔL_world / Δt;
@@ -1646,7 +1789,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
 
   private void JaiFailliAttendre() {
     // We fetch the forces from stock aerodynamics, which does not use
-    // |Part.AddForce| etc.
+    // `Part.AddForce` etc.
     if (PluginRunning()) {
       foreach (Vessel vessel in FlightGlobals.Vessels.Where(
           v => is_manageable(v) && !v.packed)) {
@@ -1657,10 +1800,9 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           Part physical_parent = closest_physical_parent(part);
           if (part.bodyLiftLocalVector != UnityEngine.Vector3.zero ||
               part.dragVector != UnityEngine.Vector3.zero) {
-            if (part_id_to_intrinsic_forces_.ContainsKey(
-                physical_parent.flightID)) {
-              var previous_holder =
-                  part_id_to_intrinsic_forces_[physical_parent.flightID];
+            if (part_id_to_intrinsic_forces_.TryGetValue(
+                    physical_parent.flightID,
+                    out PartCentredForceHolder[] previous_holder)) {
               part_id_to_intrinsic_forces_[physical_parent.flightID] =
                   new PartCentredForceHolder[previous_holder.Length + 2];
               previous_holder.CopyTo(
@@ -1692,6 +1834,25 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
                                     part.CoPOffset)
                   });
           }
+
+          // KSP sets `part.rb.angularDrag` and lets Unity/PhysX compute a
+          // dampening torque.  However, it doesn't tell us about it so we end
+          // up with uncontrolled oscillations.  Therefore, we must create that
+          // torque out of thin air here.  Note that in FAR
+          // `part.rb.angularDrag` is 0 and we are properly given the torque
+          // through `Part.AddTorque` so this code has no effect.  See #3697 and
+          // https://documentation.help/NVIDIA-PhysX-SDK-Guide/RigidDynamics.html#damping.
+          var drag_torque = -part.rb.angularDrag * part.rb.angularVelocity;
+          if (drag_torque != UnityEngine.Vector3.zero) {
+            if (part_id_to_intrinsic_torque_.ContainsKey(
+                    physical_parent.flightID)) {
+              part_id_to_intrinsic_torque_[physical_parent.flightID] +=
+                  drag_torque;
+            } else {
+              part_id_to_intrinsic_torque_.Add(physical_parent.flightID,
+                                               drag_torque);
+            }
+          }
         }
       }
     }
@@ -1717,10 +1878,8 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           // TODO(egg): use the centre of mass.
           part_id_to_degrees_of_freedom_.Add(part.flightID,
                                              new QP{
-                                                 q = (XYZ)(Vector3d)part.rb.
-                                                     position,
-                                                 p = (XYZ)(Vector3d)part.rb.
-                                                     velocity
+                                                 q = (XYZ)part.rb.position,
+                                                 p = (XYZ)part.rb.velocity
                                              });
         }
       }
@@ -1737,27 +1896,11 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
   private void BetterLateThanNeverLateUpdate() {
     // While we draw the trajectories directly (and thus do so after everything
     // else has been rendered), we rely on the game to render its map nodes.
-    // Since the screen position is determined in |MapNode.NodeUpdate|, it must
+    // Since the screen position is determined in `MapNode.NodeUpdate`, it must
     // be called before rendering occurs, but after the cameras have moved;
     // otherwise, the map nodes will lag behind when the camera is moved.
     // The only timing that satisfies these constraints is BetterLateThanNever
     // in LateUpdate.
-    string main_vessel_guid = PredictedVessel()?.id.ToString();
-    if (MapView.MapIsEnabled && main_vessel_guid != null) {
-      XYZ sun_world_position = (XYZ)Planetarium.fetch.Sun.position;
-      RenderPredictionMarkers(main_vessel_guid, sun_world_position);
-      string target_id =
-          FlightGlobals.fetch.VesselTarget?.GetVessel()?.id.ToString();
-      if (FlightGlobals.ActiveVessel != null &&
-          !plotting_frame_selector_.target_frame_selected &&
-          target_id != null &&
-          plugin_.HasVessel(target_id)) {
-        RenderPredictionMarkers(target_id, sun_world_position);
-      }
-      if (plugin_.FlightPlanExists(main_vessel_guid)) {
-        RenderFlightPlanMarkers(main_vessel_guid, sun_world_position);
-      }
-    }
     map_node_pool_.Update();
   }
 
@@ -1774,7 +1917,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       ApplyToBodyTree(body => UpdateBody(body, Planetarium.GetUniversalTime()));
 
       foreach (var body in FlightGlobals.Bodies) {
-        // TODO(egg): I have no idea why this |swizzle| thing makes things work.
+        // TODO(egg): I have no idea why this `swizzle` thing makes things work.
         // This probably really means something in terms of frames that should
         // be done in the C++ instead---once I figure out what it is.
         var swizzly_body_world_to_world =
@@ -1871,7 +2014,12 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       }
     }
     if (guidance_node_ != null) {
-      guidance_node_.RemoveSelf();
+      // We may end up here with a guidance node created for another vessel when
+      // switching vessels, see #3873.
+      if (active_vessel.patchedConicSolver.maneuverNodes.Contains(
+              guidance_node_)) {
+        guidance_node_.RemoveSelf();
+      }
       guidance_node_ = null;
     }
   }
@@ -1895,15 +2043,12 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       return;
     }
 
-    var target_vessel = FlightGlobals.fetch.VesselTarget?.GetVessel();
-    if (target_vessel != null && !plugin_.HasVessel(target_vessel.id.ToString())) {
-      target_vessel = null;
-    }
+    var target_vessel = TargetVessel();
     if (plotting_frame_selector_.target != target_vessel) {
        plotting_frame_selector_.target = target_vessel;
        if (plotting_frame_selector_.target_frame_selected &&
            target_vessel == null) {
-         // The target is not longer manageable.
+         // The target is no longer manageable.
          plotting_frame_selector_.UnsetTargetFrame();
        } else if (FlightGlobals.speedDisplayMode ==
                       FlightGlobals.SpeedDisplayModes.Target &&
@@ -1924,7 +2069,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         (UnityEngine.QuaternionD)navball_.attitudeGymbal *  // sic.
         (UnityEngine.QuaternionD)plugin_.NavballOrientation(
             (XYZ)Planetarium.fetch.Sun.position,
-            (XYZ)(Vector3d)active_vessel.ReferenceTransform.position);
+            (XYZ)active_vessel.ReferenceTransform.position);
 
     if (previous_display_mode_ != FlightGlobals.speedDisplayMode) {
       navball_changed_ = true;
@@ -1983,6 +2128,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
             set_navball_texture(inertial_navball_texture_);
             break;
           case BARYCENTRIC_ROTATING:
+          case ROTATING_PULSATING:
             set_navball_texture(barycentric_navball_texture_);
             break;
           case BODY_CENTRED_PARENT_DIRECTION:
@@ -2134,13 +2280,13 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
       return;
     }
     foreach (var celestial in FlightGlobals.Bodies.Where(
-        c => c.MapObject?.uiNode != null)) {
+                 c => c.MapObject?.uiNode != null)) {
       celestial.MapObject.uiNode.OnClick -= OnCelestialNodeClick;
       celestial.MapObject.uiNode.OnClick += OnCelestialNodeClick;
       RemoveStockTrajectoriesIfNeeded(celestial);
     }
     foreach (var vessel in FlightGlobals.Vessels.Where(
-        v => v.mapObject?.uiNode != null)) {
+                 v => v.mapObject?.uiNode != null)) {
       // There is no way to check if we have already added a callback to an
       // event...
       vessel.mapObject.uiNode.OnClick -= OnVesselNodeClick;
@@ -2151,8 +2297,61 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     if (MapView.MapIsEnabled) {
       XYZ sun_world_position = (XYZ)Planetarium.fetch.Sun.position;
       using (DisposablePlanetarium planetarium =
-          GLLines.NewPlanetarium(plugin_, sun_world_position)) {
-        plotter_.PlotTrajectories(planetarium, main_vessel_guid, main_window_.history_length);
+             GLLines.NewPlanetarium(plugin_, sun_world_position)) {
+        plotter_.PlotTrajectories(planetarium,
+                                  main_vessel_guid,
+                                  main_window_.history_length,
+                                  prediction_collision_?.t,
+                                  flight_plan_collision_?.t);
+        if (main_window_.show_equipotentials) {
+          plotter_.PlotEquipotentials(planetarium);
+        }
+      }
+    }
+  }
+
+  private void RenderTrajectoryCollisions(string vessel_guid,
+                                          out TQP? prediction_collision,
+                                          out TQP? flight_plan_collision) {
+    if (!celestial_terrains_were_validated_) {
+      var random = new Random();
+      foreach (CelestialBody celestial in FlightGlobals.Bodies) {
+        ValidateCelestialTerrain(celestial, random);
+      }
+      celestial_terrains_were_validated_ = true;
+    }
+
+    prediction_collision = null;
+    flight_plan_collision = null;
+    if (vessel_guid != null &&
+        MapView.MapIsEnabled &&
+        plotting_frame_selector_.Centre() != null) {
+      var centre = plotting_frame_selector_.Centre();
+      var centre_index = centre.flightGlobalsIndex;
+      if (plotting_frame_selector_.IsSurfaceFrame()) {
+        prediction_collision = RenderedPredictionCollision(vessel_guid, centre);
+        if (prediction_collision.HasValue) {
+          map_node_pool_.RenderMarkers(new[] { prediction_collision.Value },
+                                       new MapNodePool.Provenance(
+                                           vessel_guid,
+                                           MapNodePool.NodeSource.Prediction,
+                                           MapObject.ObjectType.
+                                               PatchTransition),
+                                       plotting_frame_selector_);
+        }
+        if (plugin_.FlightPlanExists(vessel_guid)) {
+          flight_plan_collision =
+              RenderedFlightPlanCollision(vessel_guid, centre);
+          if (flight_plan_collision.HasValue) {
+            map_node_pool_.RenderMarkers(new[] { flight_plan_collision.Value },
+                                         new MapNodePool.Provenance(
+                                             vessel_guid,
+                                             MapNodePool.NodeSource.FlightPlan,
+                                             MapObject.ObjectType.
+                                                 PatchTransition),
+                                         plotting_frame_selector_);
+          }
+        }
       }
     }
   }
@@ -2163,69 +2362,139 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     }
     string main_vessel_guid = PredictedVessel()?.id.ToString();
     if (MapView.MapIsEnabled) {
-      XYZ sun_world_position = (XYZ)Planetarium.fetch.Sun.position;
+      var sun_world_position = (XYZ)Planetarium.fetch.Sun.position;
       using (DisposablePlanetarium planetarium =
-          GLLines.NewPlanetarium(plugin_, sun_world_position)) {
-        GLLines.Draw(() => {
-          if (main_vessel_guid == null) {
-            return;
-          }
-          if (plugin_.FlightPlanExists(main_vessel_guid)) {
-            int number_of_anomalous_manœuvres =
-                plugin_.FlightPlanNumberOfAnomalousManoeuvres(main_vessel_guid);
-            int number_of_manœuvres =
-                plugin_.FlightPlanNumberOfManoeuvres(main_vessel_guid);
-            int number_of_segments =
-                plugin_.FlightPlanNumberOfSegments(main_vessel_guid);
-            for (int i = 0; i < number_of_segments; ++i) {
-              bool is_burn = i % 2 == 1;
-              using (DisposableIterator rendered_segments =
-                  plugin_.FlightPlanRenderedSegment(main_vessel_guid,
-                                                    sun_world_position,
-                                                    i)) {
-                if (rendered_segments.IteratorAtEnd()) {
-                  Log.Info("Skipping segment " + i);
-                  continue;
-                }
-                Vector3d position_at_start = (Vector3d)rendered_segments.
-                    IteratorGetDiscreteTrajectoryXYZ();
-                if (is_burn) {
-                  int manœuvre_index = i / 2;
-                  if (manœuvre_index <
-                      number_of_manœuvres - number_of_anomalous_manœuvres) {
-                    NavigationManoeuvreFrenetTrihedron manœuvre =
-                        plugin_.FlightPlanGetManoeuvreFrenetTrihedron(
-                            main_vessel_guid,
-                            manœuvre_index);
-                    double scale =
-                        (ScaledSpace.ScaledToLocalSpace(
-                             MapView.MapCamera.transform.position) -
-                         position_at_start).magnitude *
-                        0.015;
-                    Action<XYZ, UnityEngine.Color> add_vector =
-                        (world_direction, colour) => {
-                          UnityEngine.GL.Color(colour);
-                          GLLines.AddSegment(position_at_start,
-                                             position_at_start +
-                                             scale * (Vector3d)world_direction);
-                        };
-                    add_vector(manœuvre.tangent, Style.Tangent);
-                    add_vector(manœuvre.normal, Style.Normal);
-                    add_vector(manœuvre.binormal, Style.Binormal);
+        GLLines.NewPlanetarium(plugin_, sun_world_position)) {
+        if (main_vessel_guid == null) {
+          return;
+        }
+        int number_of_rendered_manœuvres = 0;
+        if (plugin_.FlightPlanExists(main_vessel_guid)) {
+          int number_of_anomalous_manœuvres =
+              plugin_.FlightPlanNumberOfAnomalousManoeuvres(main_vessel_guid);
+          int number_of_manœuvres =
+              plugin_.FlightPlanNumberOfManoeuvres(main_vessel_guid);
+          int number_of_segments =
+              plugin_.FlightPlanNumberOfSegments(main_vessel_guid);
+          for (int i = 0; i < number_of_segments; ++i) {
+            bool is_burn = i % 2 == 1;
+            using (DisposableIterator rendered_segments =
+                plugin_.FlightPlanRenderedSegment(main_vessel_guid,
+                                                  sun_world_position,
+                                                  i)) {
+              if (rendered_segments.IteratorAtEnd()) {
+                Log.Info("Skipping segment " + i);
+                continue;
+              }
+              Vector3d position_at_start = (Vector3d)rendered_segments.
+                IteratorGetDiscreteTrajectoryXYZ();
+              double time_at_start =
+                  rendered_segments.IteratorGetDiscreteTrajectoryTime();
+              if (is_burn &&
+                  (flight_plan_collision_ == null ||
+                   time_at_start <= flight_plan_collision_.Value.t)) {
+                int manœuvre_index = i / 2;
+                if (manœuvre_index <
+                    number_of_manœuvres - number_of_anomalous_manœuvres) {
+                  NavigationManoeuvreFrenetTrihedron trihedron =
+                      plugin_.FlightPlanGetManoeuvreFrenetTrihedron(
+                          main_vessel_guid,
+                          manœuvre_index);
+                  if (number_of_rendered_manœuvres
+                      >= manœuvre_marker_pool_.Count) {
+                    manœuvre_marker_pool_.Add(
+                        ManœuvreMarker.Create(main_window_, flight_planner_));
                   }
+                  var initial_plotted_velocity =
+                      (Vector3d)plugin_.FlightPlanGetManoeuvreInitialPlottedVelocity(
+                          main_vessel_guid, manœuvre_index);
+                  manœuvre_marker_pool_[number_of_rendered_manœuvres].
+                      Render(manœuvre_index,
+                             world_position: position_at_start,
+                             initial_plotted_velocity,
+                             trihedron);
+                  ++number_of_rendered_manœuvres;
                 }
               }
             }
           }
-        });
+        }
+        // This cleanup must occur even if there is no flight plan. In the
+        // tracking station, one may switch from a vessel with a plan to one
+        // without.
+        for (int i = number_of_rendered_manœuvres;
+             i < manœuvre_marker_pool_.Count;
+             ++i) {
+          // Since markers are used sequentially, all subsequent ones will
+          // be in the disabled state.
+          if (manœuvre_marker_pool_[i].is_disabled) {
+            break;
+          }
+          manœuvre_marker_pool_[i].Disable();
+        }
       }
     }
   }
 
+  private TQP? RenderedPredictionCollision(string vessel_guid,
+                                           CelestialBody centre) {
+    var executor = plugin_.CollisionNewPredictionExecutor(
+        celestial_index: centre.flightGlobalsIndex,
+        sun_world_position: (XYZ)Planetarium.fetch.Sun.position,
+        // TODO(phl): This should be much larger, if it is limited at all.
+        max_points: MapNodePool.MaxNodesPerProvenance,
+        vessel_guid: vessel_guid);
+
+    for (;;) {
+      bool more = executor.CollisionGetLatitudeLongitude(
+          out double trial_latitude,
+          out double trial_longitude);
+      if (!more) {
+        if (plugin_.CollisionDeleteExecutor(ref executor, out TQP collision)) {
+          return collision;
+        } else {
+          return null;
+        }
+      }
+      executor.CollisionSetRadius(RadiusAt(centre,
+                                           latitude: trial_latitude,
+                                           longitude: trial_longitude));
+    }
+  }
+
+  private TQP? RenderedFlightPlanCollision(string vessel_guid,
+                                           CelestialBody centre) {
+    var executor = plugin_.CollisionNewFlightPlanExecutor(
+        celestial_index: centre.flightGlobalsIndex,
+        sun_world_position: (XYZ)Planetarium.fetch.Sun.position,
+        // TODO(phl): This should be much larger, if it is limited at all.
+        max_points: MapNodePool.MaxNodesPerProvenance,
+        vessel_guid: vessel_guid);
+
+    for (;;) {
+      bool more = executor.CollisionGetLatitudeLongitude(
+          out double trial_latitude,
+          out double trial_longitude);
+      if (!more) {
+        if (plugin_.CollisionDeleteExecutor(ref executor, out TQP collision)) {
+          return collision;
+        } else {
+          return null;
+        }
+      }
+      executor.CollisionSetRadius(RadiusAt(centre,
+                                           latitude: trial_latitude,
+                                           longitude: trial_longitude));
+    }
+  }
+
   private void RenderPredictionMarkers(string vessel_guid,
+                                       TQP? prediction_collision,
                                        XYZ sun_world_position) {
-    if (plotting_frame_selector_.target_frame_selected) {
+    if (plotting_frame_selector_.target_frame_selected &&
+        TargetVessel() != null) {
       plugin_.RenderedPredictionNodes(vessel_guid,
+                                      t_max: null,
                                       sun_world_position,
                                       MapNodePool.MaxNodesPerProvenance,
                                       out DisposableIterator
@@ -2237,28 +2506,30 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           sun_world_position,
           MapNodePool.MaxNodesPerProvenance,
           out DisposableIterator approaches_iterator);
-      map_node_pool_.RenderMarkers(ascending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.Prediction,
-                                       MapObject.ObjectType.AscendingNode),
-                                   plotting_frame_selector_);
-      map_node_pool_.RenderMarkers(descending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.Prediction,
-                                       MapObject.ObjectType.DescendingNode),
-                                   plotting_frame_selector_);
-      map_node_pool_.RenderMarkers(approaches_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.Prediction,
-                                       MapObject.ObjectType.ApproachIntersect),
-                                   plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          ascending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.Prediction,
+                                     MapObject.ObjectType.AscendingNode),
+          plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          descending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.Prediction,
+                                     MapObject.ObjectType.DescendingNode),
+          plotting_frame_selector_);
+      map_node_pool_.RenderMarkers(
+          approaches_iterator.DiscreteTrajectoryPoints(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.Prediction,
+                                     MapObject.ObjectType.ApproachIntersect),
+          plotting_frame_selector_);
     } else {
       if (plotting_frame_selector_.Centre() != null) {
-        var centre_index = plotting_frame_selector_.Centre().flightGlobalsIndex;
+        var centre = plotting_frame_selector_.Centre();
+        var centre_index = centre.flightGlobalsIndex;
         plugin_.RenderedPredictionApsides(vessel_guid,
+                                          prediction_collision?.t,
                                           centre_index,
                                           sun_world_position,
                                           MapNodePool.MaxNodesPerProvenance,
@@ -2266,45 +2537,49 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
                                                   apoapsis_iterator,
                                           out DisposableIterator
                                                   periapsis_iterator);
-        map_node_pool_.RenderMarkers(apoapsis_iterator,
-                                     new MapNodePool.Provenance(
-                                         vessel_guid,
-                                         MapNodePool.NodeSource.Prediction,
-                                         MapObject.ObjectType.Apoapsis),
-                                     plotting_frame_selector_);
-        map_node_pool_.RenderMarkers(periapsis_iterator,
-                                     new MapNodePool.Provenance(
-                                         vessel_guid,
-                                         MapNodePool.NodeSource.Prediction,
-                                         MapObject.ObjectType.Periapsis),
-                                     plotting_frame_selector_);
+        map_node_pool_.RenderMarkers(
+            apoapsis_iterator.DiscreteTrajectoryPoints(),
+            new MapNodePool.Provenance(vessel_guid,
+                                       MapNodePool.NodeSource.Prediction,
+                                       MapObject.ObjectType.Apoapsis),
+            plotting_frame_selector_);
+        map_node_pool_.RenderMarkers(
+            periapsis_iterator.DiscreteTrajectoryPoints(),
+            new MapNodePool.Provenance(vessel_guid,
+                                       MapNodePool.NodeSource.Prediction,
+                                       MapObject.ObjectType.Periapsis),
+            plotting_frame_selector_);
       }
       plugin_.RenderedPredictionNodes(vessel_guid,
+                                      prediction_collision?.t,
                                       sun_world_position,
                                       MapNodePool.MaxNodesPerProvenance,
                                       out DisposableIterator
                                               ascending_nodes_iterator,
                                       out DisposableIterator
                                               descending_nodes_iterator);
-      map_node_pool_.RenderMarkers(ascending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.Prediction,
-                                       MapObject.ObjectType.AscendingNode),
-                                   plotting_frame_selector_);
-      map_node_pool_.RenderMarkers(descending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.Prediction,
-                                       MapObject.ObjectType.DescendingNode),
-                                   plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          ascending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.Prediction,
+                                     MapObject.ObjectType.AscendingNode),
+          plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          descending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.Prediction,
+                                     MapObject.ObjectType.DescendingNode),
+          plotting_frame_selector_);
     }
   }
 
   private void RenderFlightPlanMarkers(string vessel_guid,
+                                       TQP? flight_plan_collision,
                                        XYZ sun_world_position) {
-    if (plotting_frame_selector_.target_frame_selected) {
+    if (plotting_frame_selector_.target_frame_selected &&
+        TargetVessel() != null) {
       plugin_.FlightPlanRenderedNodes(vessel_guid,
+                                      t_max: null,
                                       sun_world_position,
                                       MapNodePool.MaxNodesPerProvenance,
                                       out DisposableIterator
@@ -2316,28 +2591,30 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           sun_world_position,
           MapNodePool.MaxNodesPerProvenance,
           out DisposableIterator approaches_iterator);
-      map_node_pool_.RenderMarkers(ascending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.FlightPlan,
-                                       MapObject.ObjectType.AscendingNode),
-                                   plotting_frame_selector_);
-      map_node_pool_.RenderMarkers(descending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.FlightPlan,
-                                       MapObject.ObjectType.DescendingNode),
-                                   plotting_frame_selector_);
-      map_node_pool_.RenderMarkers(approaches_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.FlightPlan,
-                                       MapObject.ObjectType.ApproachIntersect),
-                                   plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          ascending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.FlightPlan,
+                                     MapObject.ObjectType.AscendingNode),
+          plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          descending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.FlightPlan,
+                                     MapObject.ObjectType.DescendingNode),
+          plotting_frame_selector_);
+      map_node_pool_.RenderMarkers(
+          approaches_iterator.DiscreteTrajectoryPoints(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.FlightPlan,
+                                     MapObject.ObjectType.ApproachIntersect),
+          plotting_frame_selector_);
     } else {
       if (plotting_frame_selector_.Centre() != null) {
-        var centre_index = plotting_frame_selector_.Centre().flightGlobalsIndex;
+        var centre = plotting_frame_selector_.Centre();
+        var centre_index = centre.flightGlobalsIndex;
         plugin_.FlightPlanRenderedApsides(vessel_guid,
+                                          flight_plan_collision?.t,
                                           centre_index,
                                           sun_world_position,
                                           MapNodePool.MaxNodesPerProvenance,
@@ -2345,38 +2622,39 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
                                                   apoapsis_iterator,
                                           out DisposableIterator
                                                   periapsis_iterator);
-        map_node_pool_.RenderMarkers(apoapsis_iterator,
-                                     new MapNodePool.Provenance(
-                                         vessel_guid,
-                                         MapNodePool.NodeSource.FlightPlan,
-                                         MapObject.ObjectType.Apoapsis),
-                                     plotting_frame_selector_);
-        map_node_pool_.RenderMarkers(periapsis_iterator,
-                                     new MapNodePool.Provenance(
-                                         vessel_guid,
-                                         MapNodePool.NodeSource.FlightPlan,
-                                         MapObject.ObjectType.Periapsis),
-                                     plotting_frame_selector_);
+        map_node_pool_.RenderMarkers(
+            apoapsis_iterator.DiscreteTrajectoryPoints(),
+            new MapNodePool.Provenance(vessel_guid,
+                                       MapNodePool.NodeSource.FlightPlan,
+                                       MapObject.ObjectType.Apoapsis),
+            plotting_frame_selector_);
+        map_node_pool_.RenderMarkers(
+            periapsis_iterator.DiscreteTrajectoryPoints(),
+            new MapNodePool.Provenance(vessel_guid,
+                                       MapNodePool.NodeSource.FlightPlan,
+                                       MapObject.ObjectType.Periapsis),
+            plotting_frame_selector_);
       }
       plugin_.FlightPlanRenderedNodes(vessel_guid,
+                                      flight_plan_collision?.t,
                                       sun_world_position,
                                       MapNodePool.MaxNodesPerProvenance,
                                       out DisposableIterator
                                               ascending_nodes_iterator,
                                       out DisposableIterator
                                               descending_nodes_iterator);
-      map_node_pool_.RenderMarkers(ascending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.FlightPlan,
-                                       MapObject.ObjectType.AscendingNode),
-                                   plotting_frame_selector_);
-      map_node_pool_.RenderMarkers(descending_nodes_iterator,
-                                   new MapNodePool.Provenance(
-                                       vessel_guid,
-                                       MapNodePool.NodeSource.FlightPlan,
-                                       MapObject.ObjectType.DescendingNode),
-                                   plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          ascending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.FlightPlan,
+                                     MapObject.ObjectType.AscendingNode),
+          plotting_frame_selector_);
+      map_node_pool_.RenderNodes(
+          descending_nodes_iterator.Nodes(),
+          new MapNodePool.Provenance(vessel_guid,
+                                     MapNodePool.NodeSource.FlightPlan,
+                                     MapObject.ObjectType.DescendingNode),
+          plotting_frame_selector_);
     }
   }
 
@@ -2400,7 +2678,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
     }
   }
 
-  private void UpdatePlottingFrame(PlottingFrameParameters? frame_parameters,
+  private void UpdatePlottingFrame(PlottingFrameParameters frame_parameters,
                                    Vessel target_vessel) {
     if (target_vessel != null) {
       // TODO(egg): We should use the analyser to pick the reference body.
@@ -2409,7 +2687,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
           target_vessel.orbit.referenceBody.flightGlobalsIndex);
     } else {
       plugin_.ClearTargetVessel();
-      plugin_.SetPlottingFrame(frame_parameters.Value);
+      plugin_.SetPlottingFrame(frame_parameters);
     }
     navball_changed_ = true;
     reset_rsas_target_ = true;
@@ -2503,10 +2781,10 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         if (name_to_gravity_model == null) {
           Log.Fatal("Cartesian config without gravity models");
         }
-        // Note that |game_epoch| is not in the astronomy proto, as it is
-        // KSP-specific: it is the |Instant| corresponding to KSP's
+        // Note that `game_epoch` is not in the astronomy proto, as it is
+        // KSP-specific: it is the `Instant` corresponding to KSP's
         // UniversalTime 0.  It is passed as an argument to
-        // |generate_configuration|.
+        // `generate_configuration`.
         plugin_ = Interface.NewPlugin(
             initial_state.GetUniqueValue("game_epoch"),
             initial_state.GetUniqueValue("solar_system_epoch"),
@@ -2550,7 +2828,7 @@ public partial class PrincipiaPluginAdapter : ScenarioModule,
         plugin_.EndInitialization();
       } else {
         // We create the plugin at J2000 (a.k.a. Instant{}), rather than
-        // |Planetarium.GetUniversalTime()|, in order to get a deterministic
+        // `Planetarium.GetUniversalTime()`, in order to get a deterministic
         // initial state.
         plugin_ = Interface.NewPlugin(game_epoch: "JD2451545",
                                       solar_system_epoch: "JD2451545",

@@ -110,6 +110,9 @@
     <ClInclude Include="optimization_test_functions.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="check_well_formedness.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="almost_equals_test.cpp">
@@ -136,14 +139,8 @@
     <ClCompile Include="is_near_test.cpp">
       <Filter>Test Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\numerics\cbrt.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="approximate_quantity_test.cpp">
       <Filter>Test Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\base\cpuid.cpp">
-      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="discrete_trajectory_factories_test.cpp">
       <Filter>Test Files</Filter>
@@ -154,8 +151,8 @@
     <ClCompile Include="optimization_test_functions_test.cpp">
       <Filter>Test Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\geometry\instant.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="check_well_formedness_test.cpp">
+      <Filter>Test Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

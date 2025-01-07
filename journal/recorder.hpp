@@ -4,13 +4,14 @@
 #include <fstream>
 
 #include "absl/synchronization/mutex.h"
+#include "base/macros.hpp"  // 🧙 For forward declarations.
 #include "base/not_null.hpp"
 #include "serialization/journal.pb.h"
 
 namespace principia {
 namespace journal {
 
-FORWARD_DECLARE_FROM(method, template<typename Profile> class, Method);
+FORWARD_DECLARE(template<typename Profile> class, Method, FROM(method));
 
 class RecorderTest;
 

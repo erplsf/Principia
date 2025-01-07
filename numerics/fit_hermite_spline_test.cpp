@@ -3,10 +3,16 @@
 #include <list>
 #include <vector>
 
+#include "base/ranges.hpp"
 #include "geometry/instant.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "numerics/double_precision.hpp"
+#include "numerics/hermite3.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
 
@@ -59,7 +65,7 @@ TEST_F(FitHermiteSplineTest, Sinusoid) {
     }
   }
   std::list<std::vector<Sample>::const_iterator> const interpolation_points =
-      FitHermiteSpline<Instant, Length>(
+      FitHermiteSpline<Length, Instant>(
           samples,
           [](auto&& sample) -> auto&& { return sample.t; },
           [](auto&& sample) -> auto&& { return sample.x; },
@@ -67,8 +73,8 @@ TEST_F(FitHermiteSplineTest, Sinusoid) {
           1 * Centi(Metre)).value();
 
   // Note that gmock doesn't do decltypes, so we can't pass a λ directly.
-  // Also note that |Pointee| doesn't work with iterators, so
-  // |Pointee(Field(&Sample::t, _))| is not an option.
+  // Also note that `Pointee` doesn't work with iterators, so
+  // `Pointee(Field(&Sample::t, _))` is not an option.
   std::function<Instant(std::vector<Sample>::const_iterator)> const get_time =
       [](auto const it) { return it->t; };
   EXPECT_THAT(interpolation_points,
@@ -77,7 +83,7 @@ TEST_F(FitHermiteSplineTest, Sinusoid) {
 
   auto lower_bound = samples.cbegin();
   auto upper_bound = interpolation_points.front();
-  Hermite3<Instant, Length> first_polynomial({lower_bound->t, upper_bound->t},
+  Hermite3<Length, Instant> first_polynomial({lower_bound->t, upper_bound->t},
                                              {lower_bound->x, upper_bound->x},
                                              {lower_bound->v, upper_bound->v});
   EXPECT_THAT(first_polynomial.LInfinityError(
@@ -87,7 +93,7 @@ TEST_F(FitHermiteSplineTest, Sinusoid) {
               IsNear(9.3_(1) * Milli(Metre)));
   lower_bound = upper_bound;
   upper_bound = interpolation_points.back();
-  Hermite3<Instant, Length> second_polynomial({lower_bound->t, upper_bound->t},
+  Hermite3<Length, Instant> second_polynomial({lower_bound->t, upper_bound->t},
                                               {lower_bound->x, upper_bound->x},
                                               {lower_bound->v, upper_bound->v});
   EXPECT_THAT(second_polynomial.LInfinityError(
@@ -97,7 +103,7 @@ TEST_F(FitHermiteSplineTest, Sinusoid) {
               IsNear(1.0_(1) * Centi(Metre)));
   lower_bound = upper_bound;
   upper_bound = samples.cend() - 1;
-  Hermite3<Instant, Length> tail_polynomial({lower_bound->t, upper_bound->t},
+  Hermite3<Length, Instant> tail_polynomial({lower_bound->t, upper_bound->t},
                                             {lower_bound->x, upper_bound->x},
                                             {lower_bound->v, upper_bound->v});
   EXPECT_THAT(tail_polynomial.LInfinityError(
@@ -127,7 +133,7 @@ TEST_F(FitHermiteSplineDeathTest, NoDownsampling) {
     }
   }
   auto fit_hermite_spline = [&samples]() {
-    return FitHermiteSpline<Instant, Length>(
+    return FitHermiteSpline<Length, Instant>(
         samples,
         [](auto&& sample) -> auto&& { return sample.t; },
         [](auto&& sample) -> auto&& { return sample.x; },

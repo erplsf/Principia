@@ -3,17 +3,16 @@
 #include "physics/mechanical_system.hpp"
 
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
+#include "quantities/si.hpp"
 
 namespace principia {
 namespace physics {
 namespace _mechanical_system {
 namespace internal {
 
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_space;
-using namespace principia::geometry::_symmetric_bilinear_form;
-using namespace principia::quantities::_named_quantities;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::quantities::_si;
 
 template<typename InertialFrame, typename SystemFrame>

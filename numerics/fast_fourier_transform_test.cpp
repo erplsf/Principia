@@ -1,6 +1,7 @@
 #include "numerics/fast_fourier_transform.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -11,6 +12,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 

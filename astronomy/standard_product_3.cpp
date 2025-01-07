@@ -1,20 +1,23 @@
 #include "astronomy/standard_product_3.hpp"
 
-#include <algorithm>
+#include <array>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "astronomy/time_scales.hpp"
 #include "base/map_util.hpp"
-#include "base/status_utilities.hpp"
-#include "geometry/instant.hpp"
-#include "geometry/space.hpp"
+#include "base/status_utilities.hpp"  // 🧙 For CHECK_OK.
 #include "glog/logging.h"
 #include "numerics/finite_difference.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 
 namespace principia {
 namespace astronomy {
@@ -23,9 +26,6 @@ namespace internal {
 
 using namespace principia::astronomy::_time_scales;
 using namespace principia::base::_map_util;
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_instant;
-using namespace principia::geometry::_space;
 using namespace principia::numerics::_finite_difference;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
@@ -50,7 +50,7 @@ not_null<std::unique_ptr<DiscreteTrajectory<ITRS>>> ComputeVelocities(
     positions[k] = it->degrees_of_freedom.position();
   }
   // We use a central difference formula wherever possible, so we keep
-  // |offset| at (n - 1) / 2 except at the beginning and end of the arc.
+  // `offset` at (n - 1) / 2 except at the beginning and end of the arc.
   int offset = 0;
   for (int i = 0; i < arc.size(); ++i) {
     CHECK_OK(result->Append(times[offset],
@@ -59,8 +59,8 @@ not_null<std::unique_ptr<DiscreteTrajectory<ITRS>>> ComputeVelocities(
                                  /*values=*/positions,
                                  /*step=*/(times[n - 1] - times[0]) / (n - 1),
                                  offset)}));
-    // At every iteration, either |offset| advances, or the |positions|
-    // window shifts and |it| advances.
+    // At every iteration, either `offset` advances, or the `positions`
+    // window shifts and `it` advances.
     if (offset < (n - 1) / 2 || it == arc.end()) {
       ++offset;
     } else {
@@ -71,7 +71,7 @@ not_null<std::unique_ptr<DiscreteTrajectory<ITRS>>> ComputeVelocities(
       ++it;
     }
   }
-  // Note that having the right number of calls to |Append| does not guarantee
+  // Note that having the right number of calls to `Append` does not guarantee
   // this, as appending at an existing time merely emits a warning.
   CHECK_EQ(result->size(), arc.size());
   return result;
@@ -452,17 +452,6 @@ StandardProduct3::Version StandardProduct3::version() const {
 
 bool StandardProduct3::file_has_velocities() const {
   return has_velocities_;
-}
-
-bool operator==(StandardProduct3::SatelliteIdentifier const& left,
-                StandardProduct3::SatelliteIdentifier const& right) {
-  return left.group == right.group && left.index == right.index;
-}
-
-bool operator<(StandardProduct3::SatelliteIdentifier const& left,
-               StandardProduct3::SatelliteIdentifier const& right) {
-  return left.group < right.group ||
-         (left.group == right.group && left.index < right.index);
 }
 
 std::ostream& operator<<(std::ostream& out,

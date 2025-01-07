@@ -10,12 +10,14 @@
 #include "geometry/grassmann.hpp"
 #include "geometry/point.hpp"
 #include "geometry/quaternion.hpp"
-#include "geometry/rotation.hpp"
 #include "geometry/r3_element.hpp"
 #include "geometry/r3x3_matrix.hpp"
+#include "geometry/rotation.hpp"
 #include "gmock/gmock.h"
+#include "numerics/double_precision.hpp"
 #include "numerics/fixed_arrays.hpp"
 #include "numerics/unbounded_arrays.hpp"
+#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace testing_utilities {
@@ -29,6 +31,7 @@ using namespace principia::geometry::_quaternion;
 using namespace principia::geometry::_r3_element;
 using namespace principia::geometry::_r3x3_matrix;
 using namespace principia::geometry::_rotation;
+using namespace principia::numerics::_double_precision;
 using namespace principia::numerics::_fixed_arrays;
 using namespace principia::numerics::_unbounded_arrays;
 using namespace principia::quantities::_quantities;
@@ -36,14 +39,14 @@ using namespace principia::quantities::_quantities;
 template<typename T>
 class AlmostEqualsMatcher;
 
-// The 2-argument version of |AlmostEquals()| should always be preferred as it
+// The 2-argument version of `AlmostEquals()` should always be preferred as it
 // guarantees that the error bound is tight.
 template<typename T>
 testing::PolymorphicMatcher<AlmostEqualsMatcher<T>> AlmostEquals(
     T const& expected,
     std::int64_t max_ulps);
 
-// The 3-argument version of |AlmostEquals()| is exclusively for use when a
+// The 3-argument version of `AlmostEquals()` is exclusively for use when a
 // given assertion may have different errors, e.g., because it's in a loop.  It
 // doesn't guarantee that the error bound is tight.  For vectors, it applies
 // only to the component with the largest error.
@@ -90,18 +93,21 @@ class AlmostEqualsMatcher final {
   template<typename Vector>
   bool MatchAndExplain(Point<Vector> const& actual,
                        testing::MatchResultListener* listener) const;
-  template<typename Scalar, int size>
+  template<typename S>
+  bool MatchAndExplain(DoublePrecision<S> const& actual,
+                       testing::MatchResultListener* listener) const;
+  template<typename Scalar, std::int64_t size>
   bool MatchAndExplain(FixedVector<Scalar, size> const& actual,
                        testing::MatchResultListener* listener) const;
-  template<typename Scalar, int rows, int columns>
+  template<typename Scalar, std::int64_t rows, std::int64_t columns>
   bool MatchAndExplain(
       FixedMatrix<Scalar, rows, columns> const& actual,
       testing::MatchResultListener* listener) const;
-  template<typename Scalar, int rows>
+  template<typename Scalar, std::int64_t rows>
   bool MatchAndExplain(
       FixedLowerTriangularMatrix<Scalar, rows> const& actual,
       testing::MatchResultListener* listener) const;
-  template<typename Scalar, int columns>
+  template<typename Scalar, std::int64_t columns>
   bool MatchAndExplain(
       FixedUpperTriangularMatrix<Scalar, columns> const& actual,
       testing::MatchResultListener* listener) const;

@@ -5,13 +5,12 @@
 #include <utility>
 
 #include "gtest/gtest.h"
-#include "quantities/numbers.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/is_near.hpp"
+#include "testing_utilities/numerics.hpp"
 #include "testing_utilities/serialization.hpp"
-
-#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace numerics {
@@ -185,6 +184,28 @@ TEST_F(EllipticIntegralsTest, MathematicaTrivariate) {
     EXPECT_THAT(actual_value_ᴨ, AlmostEquals(expected_value_ᴨ, 0, 3934))
         << argument_φ << " " << argument_n << " " << argument_m;
   }
+}
+
+// There is no good way to do argument reduction for such a large angle, but at
+// least we should not die with an infinite recursion.
+TEST_F(EllipticIntegralsTest, Issue4070) {
+  Angle const argument_φ = 9.7851614769491724e+22 * Radian;
+  double const argument_n = -1.3509565896317132e-17;
+  double const argument_m = 1.0;
+
+  Angle actual_value_b;
+  Angle actual_value_d;
+  Angle actual_value_j;
+  FukushimaEllipticBDJ(argument_φ,
+                       argument_n,
+                       1.0 - argument_m,
+                       actual_value_b,
+                       actual_value_d,
+                       actual_value_j);
+
+  EXPECT_FALSE(IsFinite(actual_value_b));
+  EXPECT_FALSE(IsFinite(actual_value_d));
+  EXPECT_FALSE(IsFinite(actual_value_j));
 }
 
 }  // namespace numerics

@@ -9,8 +9,7 @@
 #include "base/traits.hpp"
 #include "geometry/orthogonal_map.hpp"
 #include "geometry/quaternion.hpp"
-#include "geometry/r3_element.hpp"
-#include "geometry/sign.hpp"
+#include "geometry/rotation.hpp"
 #include "quantities/elementary_functions.hpp"
 
 namespace principia {
@@ -122,10 +121,10 @@ void Permutation<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Permutation<FromFrame, ToFrame>
 Permutation<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::LinearMap const& message) {
+    serialization::LinearMap const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   LinearMap<Permutation, FromFrame, ToFrame>::ReadFromMessage(message);
   CHECK(message.HasExtension(serialization::Permutation::extension));
   return ReadFromMessage(
@@ -140,10 +139,10 @@ void Permutation<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Permutation<FromFrame, ToFrame>
 Permutation<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::Permutation const& message) {
+    serialization::Permutation const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   return Permutation(static_cast<CoordinatePermutation>(
       message.coordinate_permutation()));
 }

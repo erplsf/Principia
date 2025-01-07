@@ -3,13 +3,15 @@
 #include "geometry/perspective.hpp"
 
 #include <algorithm>
-#include <deque>
 #include <limits>
+#include <utility>
 #include <vector>
 
 #include "geometry/barycentre_calculator.hpp"
+#include "geometry/grassmann.hpp"
+#include "geometry/r3_element.hpp"
 #include "numerics/root_finders.hpp"
-#include "quantities/named_quantities.hpp"
+#include "quantities/elementary_functions.hpp"
 
 namespace principia {
 namespace geometry {
@@ -21,7 +23,6 @@ using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_r3_element;
 using namespace principia::numerics::_root_finders;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 
 template<typename FromFrame, typename ToFrame>
 Perspective<FromFrame, ToFrame>::Perspective(
@@ -78,8 +79,7 @@ Perspective<FromFrame, ToFrame>::SegmentBehindFocalPlane(
     // λ determines where the segment intersects the focal plane.
     double const λ = (focal_ - z2) / (z1 - z2);
     auto const intercept =
-        Barycentre<Position<FromFrame>, double>(segment,
-                                                {λ, 1.0 - λ});
+        Barycentre({segment.first, segment.second}, {λ, 1.0 - λ});
     if (first_is_visible) {
       return std::make_optional<Segment<FromFrame>>(segment.first, intercept);
     } else {

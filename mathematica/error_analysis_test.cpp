@@ -1,5 +1,6 @@
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/map_util.hpp"
@@ -9,14 +10,12 @@
 #include "integrators/integrators.hpp"
 #include "ksp_plugin/frames.hpp"
 #include "mathematica/integrator_plots.hpp"
-#include "mathematica/mathematica.hpp"
 #include "mathematica/local_error_analysis.hpp"
 #include "mathematica/retrobop_dynamical_stability.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/solar_system.hpp"
 #include "quantities/parser.hpp"
 #include "quantities/quantities.hpp"
-#include "quantities/si.hpp"
 
 namespace principia {
 namespace mathematica {

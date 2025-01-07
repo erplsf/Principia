@@ -2,20 +2,20 @@
 
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
 
+#include <memory>
+#include <utility>
 #include <vector>
 
-#include "base/jthread.hpp"
 #include "geometry/sign.hpp"
-#include "integrators/methods.hpp"
+#include "numerics/double_precision.hpp"
 #include "numerics/ulp_distance.hpp"
-#include "quantities/quantities.hpp"
+#include "quantities/elementary_functions.hpp"
 
 namespace principia {
 namespace integrators {
 namespace _symplectic_runge_kutta_nyström_integrator {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_sign;
 using namespace principia::numerics::_double_precision;
 using namespace principia::numerics::_ulp_distance;
@@ -38,7 +38,7 @@ Instance::Solve(Instant const& t_final) {
   auto const& equation = this->equation_;
   auto const& step = this->step_;
 
-  // |current_state| is updated as the integration progresses to allow
+  // `current_state` is updated as the integration progresses to allow
   // restartability.
 
   // Argument checks.
@@ -113,10 +113,9 @@ Instance::Solve(Instant const& t_final) {
       for (int k = 0; k < dimension; ++k) {
         q_stage[k] = q[k].value + Δq[k];
       }
-      termination_condition::UpdateWithAbort(
+      status.Update(
           equation.compute_acceleration(
-              t.value + (t.error + c[i] * h), q_stage, g),
-          status);
+              t.value + (t.error + c[i] * h), q_stage, g));
       for (int k = 0; k < dimension; ++k) {
         // exp(bᵢ h B)
         Δv[k] += h * b[i] * g[k];
@@ -134,8 +133,8 @@ Instance::Solve(Instant const& t_final) {
       q[k].Increment(Δq[k]);
       v[k].Increment(Δv[k]);
     }
-    RETURN_IF_STOPPED;
     append_state(current_state);
+    RETURN_IF_STOPPED;  // After the state has been updated.
     if (absl::IsAborted(status)) {
       return status;
     }
@@ -245,7 +244,7 @@ SymplecticRungeKuttaNyströmIntegrator<Method, ODE_>::NewInstance(
     InitialValueProblem<ODE> const& problem,
     AppendState const& append_state,
     Time const& step) const {
-  // Cannot use |make_not_null_unique| because the constructor of |Instance| is
+  // Cannot use `make_not_null_unique` because the constructor of `Instance` is
   // private.
   return std::unique_ptr<Instance>(
       new Instance(problem, append_state, step, *this));

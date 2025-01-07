@@ -1,4 +1,4 @@
-// The files containing the tree of of child classes of |Integrator| must be
+// The files containing the tree of of child classes of `Integrator` must be
 // included in the order of inheritance to avoid circular dependencies.  This
 // class will end up being reincluded as part of the implementation of its
 // parent.
@@ -8,14 +8,13 @@
 #ifndef PRINCIPIA_INTEGRATORS_EXPLICIT_LINEAR_MULTISTEP_INTEGRATOR_HPP_
 #define PRINCIPIA_INTEGRATORS_EXPLICIT_LINEAR_MULTISTEP_INTEGRATOR_HPP_
 
-#include <list>
-#include <vector>
+#include <memory>
 
 #include "absl/status/status.h"
 #include "base/not_null.hpp"
 #include "base/traits.hpp"
 #include "integrators/ordinary_differential_equations.hpp"
-#include "integrators/starter.hpp"
+#include "integrators/starter.hpp"  // 🧙 For _starter.
 #include "numerics/double_precision.hpp"
 #include "numerics/fixed_arrays.hpp"
 
@@ -28,7 +27,6 @@ using namespace principia::base::_not_null;
 using namespace principia::base::_traits;
 using namespace principia::integrators::_integrators;
 using namespace principia::integrators::_ordinary_differential_equations;
-using namespace principia::integrators::_starter;
 using namespace principia::numerics::_double_precision;
 using namespace principia::numerics::_fixed_arrays;
 

@@ -1,0 +1,21 @@
+.\sourcerer\bin\debug\net7.0\sourcerer.exe `
+    make_editorconfig `
+    --dry_run:false `
+    --project:astronomy `
+    --project:base `
+    --project:benchmarks `
+    --project:geometry `
+    --project:integrators `
+    --project:journal `
+    --project:ksp_plugin `
+    --project:ksp_plugin_test `
+    --project:mathematica `
+    --project:numerics `
+    --project:physics `
+    --project:quantities `
+    --project:testing_utilities `
+    --project:tools `
+    --extra:gipfeli/gipfeli.h=gipfeli/compression.h `
+    --extra:gmock/gmock.h=gmock/gmock-actions.h+gmock/gmock-matchers.h+gmock/gmock-more-matchers.h+gmock/gmock-nice-strict.h+gmock/gmock-spec-builders.h+gmock/internal/gmock-pp.h `
+    --extra:gtest/gtest.h=gtest/gtest-matchers.h+gtest/internal/gtest-internal.h+gtest/gtest-message.h `
+    --solution:.

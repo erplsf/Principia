@@ -1,8 +1,11 @@
 #include "testing_utilities/optimization_test_functions.hpp"
 
+#include <array>
+#include <cmath>
+#include <cstdint>
+
 #include "numerics/fixed_arrays.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/numbers.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -30,7 +33,7 @@ constexpr FixedMatrix<double, /*rows=*/4, /*columns=*/3> A({3.0, 10, 30,
                                                             3.0, 10, 30,
                                                             0.1, 10, 35});
 
-// There is a lot of confusion regarding the value of |P|, and unfortunately I
+// There is a lot of confusion regarding the value of `P`, and unfortunately I
 // couldn't go back to the source, which is widely known as "the traditional ...
 // test set ... from Dixon and Szegő".
 // For A(0, 0) the two values 3689e-4 and 6890e-4 are customarily found.  For

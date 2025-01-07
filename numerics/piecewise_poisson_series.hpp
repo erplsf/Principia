@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For forward declarations.
 #include "base/not_null.hpp"
 #include "geometry/complexification.hpp"
 #include "geometry/hilbert.hpp"
@@ -19,27 +19,24 @@
 
 namespace principia {
 namespace numerics {
-FORWARD_DECLARE_FROM(piecewise_poisson_series,
-                     TEMPLATE(typename Value,
-                              int aperiodic_degree, int periodic_degree,
-                              template<typename, typename, int> class Evaluator)
-                              class,
-                     PiecewisePoissonSeries);
+FORWARD_DECLARE(
+    TEMPLATE(typename Value,
+             int aperiodic_degree, int periodic_degree) class,
+    PiecewisePoissonSeries,
+    FROM(piecewise_poisson_series));
 }  // namespace numerics
 
 namespace mathematica {
-FORWARD_DECLARE_FUNCTION_FROM(
-    mathematica,
+FORWARD_DECLARE_FUNCTION(
     TEMPLATE(typename Value,
              int aperiodic_degree, int periodic_degree,
-             template<typename, typename, int> class Evaluator,
              typename OptionalExpressIn) std::string,
     ToMathematicaBody,
     (numerics::_piecewise_poisson_series::PiecewisePoissonSeries<
          Value,
-         aperiodic_degree, periodic_degree,
-         Evaluator> const& series,
-     OptionalExpressIn express_in));
+         aperiodic_degree, periodic_degree> const& series,
+     OptionalExpressIn express_in),
+     FROM(mathematica));
 }  // namespace mathematica
 
 namespace numerics {
@@ -64,18 +61,25 @@ constexpr int estimated_trigonometric_degree = 1;
 // [internal.min, interval.max[.  It's not required that the function be
 // continuous.
 template<typename Value,
-         int aperiodic_degree_, int periodic_degree_,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_degree_, int periodic_degree_>
 class PiecewisePoissonSeries {
  public:
   using Series = PoissonSeries<Value,
-                               aperiodic_degree_, periodic_degree_,
-                               Evaluator>;
+                               aperiodic_degree_, periodic_degree_>;
   using Spectrum = std::function<Complexification<Primitive<Value, Time>>(
       AngularFrequency const&)>;
 
   PiecewisePoissonSeries(Interval<Instant> const& interval,
                          Series const& series);
+
+  template<int aperiodic_rdegree, int periodic_rdegree>
+  PiecewisePoissonSeries& operator+=(
+      PoissonSeries<Value,
+                    aperiodic_rdegree, periodic_rdegree> const& right);
+  template<int aperiodic_rdegree, int periodic_rdegree>
+  PiecewisePoissonSeries& operator-=(
+      PoissonSeries<Value,
+                    aperiodic_rdegree, periodic_rdegree> const& right);
 
   // The intervals for successive calls to Append must be consecutive.  For the
   // first call, the interval must be consecutive with the one passed at
@@ -99,29 +103,17 @@ class PiecewisePoissonSeries {
   // Gauss-Legendre quadrature on each subinterval, where the number of points
   // is chosen assuming that the periods of periodic terms are all large
   // compared to the subintervals.
-  // If apodization is desired, |*this| should be multiplied by an apodization
-  // function, and |FourierTransform| should be called on the product.
-  // |*this| must outlive the resulting function.
+  // If apodization is desired, `*this` should be multiplied by an apodization
+  // function, and `FourierTransform` should be called on the product.
+  // `*this` must outlive the resulting function.
   Spectrum FourierTransform() const;
 
   template<int aperiodic_wdegree, int periodic_wdegree>
   typename Hilbert<Value>::NormType Norm(
       PoissonSeries<double,
-                    aperiodic_wdegree, periodic_wdegree,
-                    Evaluator> const& weight,
+                    aperiodic_wdegree, periodic_wdegree> const& weight,
       Instant const& t_min,
       Instant const& t_max) const;
-
-  template<int aperiodic_rdegree, int periodic_rdegree>
-  PiecewisePoissonSeries& operator+=(
-      PoissonSeries<Value,
-                    aperiodic_rdegree, periodic_rdegree,
-                    Evaluator> const& right);
-  template<int aperiodic_rdegree, int periodic_rdegree>
-  PiecewisePoissonSeries& operator-=(
-      PoissonSeries<Value,
-                    aperiodic_rdegree, periodic_rdegree,
-                    Evaluator> const& right);
 
   void WriteToMessage(
       not_null<serialization::PiecewisePoissonSeries*> message) const;
@@ -147,86 +139,70 @@ class PiecewisePoissonSeries {
   // copies remain cheap.
   mutable std::shared_ptr<std::vector<Value>> gauss_legendre_cache_;
 
-  template<typename V, int ar, int pr,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<V, ar, pr, E>
-  friend operator-(PiecewisePoissonSeries<V, ar, pr, E> const& right);
-  template<typename S, typename V, int ar, int pr,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<Product<S, V>, ar, pr, E>
+  template<typename V, int ar, int pr>
+  PiecewisePoissonSeries<V, ar, pr>
+  friend operator-(PiecewisePoissonSeries<V, ar, pr> const& right);
+  template<typename S, typename V, int ar, int pr>
+  PiecewisePoissonSeries<Product<S, V>, ar, pr>
   friend operator*(S const& left,
-                   PiecewisePoissonSeries<V, ar, pr, E> const& right);
-  template<typename S, typename V, int al, int pl,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<Product<V, S>, al, pl, E>
-  friend operator*(PiecewisePoissonSeries<V, al, pl, E> const& left,
+                   PiecewisePoissonSeries<V, ar, pr> const& right);
+  template<typename S, typename V, int al, int pl>
+  PiecewisePoissonSeries<Product<V, S>, al, pl>
+  friend operator*(PiecewisePoissonSeries<V, al, pl> const& left,
                    S const& right);
-  template<typename S, typename V, int al, int pl,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<Quotient<V, S>, al, pl, E>
-  friend operator/(PiecewisePoissonSeries<V, al, pl, E> const& left,
+  template<typename S, typename V, int al, int pl>
+  PiecewisePoissonSeries<Quotient<V, S>, al, pl>
+  friend operator/(PiecewisePoissonSeries<V, al, pl> const& left,
                    S const& right);
-  template<typename V, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<V, PRINCIPIA_MAX(al, ar), PRINCIPIA_MAX(pl, pr), E>
-  friend operator+(PoissonSeries<V, al, pl, E> const& left,
-                   PiecewisePoissonSeries<V, ar, pr, E> const& right);
-  template<typename V, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<V, PRINCIPIA_MAX(al, ar), PRINCIPIA_MAX(pl, pr), E>
-  friend operator+(PiecewisePoissonSeries<V, al, pl, E> const& left,
-                   PoissonSeries<V, ar, pr, E> const& right);
-  template<typename V, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<V, PRINCIPIA_MAX(al, ar), PRINCIPIA_MAX(pl, pr), E>
-  friend operator-(PoissonSeries<V, al, pl, E> const& left,
-                   PiecewisePoissonSeries<V, ar, pr, E> const& right);
-  template<typename V, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
-  PiecewisePoissonSeries<V, PRINCIPIA_MAX(al, ar), PRINCIPIA_MAX(pl, pr), E>
-  friend operator-(PiecewisePoissonSeries<V, al, pl, E> const& left,
-                   PoissonSeries<V, ar, pr, E> const& right);
-  template<typename L, typename R, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
+  template<typename V, int al, int pl, int ar, int pr>
+  PiecewisePoissonSeries<V, std::max(al, ar), std::max(pl, pr)>
+  friend operator+(PoissonSeries<V, al, pl> const& left,
+                   PiecewisePoissonSeries<V, ar, pr> const& right);
+  template<typename V, int al, int pl, int ar, int pr>
+  PiecewisePoissonSeries<V, std::max(al, ar), std::max(pl, pr)>
+  friend operator+(PiecewisePoissonSeries<V, al, pl> const& left,
+                   PoissonSeries<V, ar, pr> const& right);
+  template<typename V, int al, int pl, int ar, int pr>
+  PiecewisePoissonSeries<V, std::max(al, ar), std::max(pl, pr)>
+  friend operator-(PoissonSeries<V, al, pl> const& left,
+                   PiecewisePoissonSeries<V, ar, pr> const& right);
+  template<typename V, int al, int pl, int ar, int pr>
+  PiecewisePoissonSeries<V, std::max(al, ar), std::max(pl, pr)>
+  friend operator-(PiecewisePoissonSeries<V, al, pl> const& left,
+                   PoissonSeries<V, ar, pr> const& right);
+  template<typename L, typename R, int al, int pl, int ar, int pr>
   PiecewisePoissonSeries<Product<L, R>,
-                         PRINCIPIA_MAX4(al + ar, al + pr, pl + ar, pl + pr),
-                         PRINCIPIA_MAX3(al + pr, pl + ar, pl + pr),
-                         E>
-  friend operator*(PoissonSeries<L, al, pl, E> const& left,
-                   PiecewisePoissonSeries<R, ar, pr, E> const& right);
-  template<typename L, typename R, int al, int pl, int ar, int pr,
-           template<typename, typename, int> class E>
+                         std::max({al + ar, al + pr, pl + ar, pl + pr}),
+                         std::max({al + pr, pl + ar, pl + pr})>
+  friend operator*(PoissonSeries<L, al, pl> const& left,
+                   PiecewisePoissonSeries<R, ar, pr> const& right);
+  template<typename L, typename R, int al, int pl, int ar, int pr>
   PiecewisePoissonSeries<Product<L, R>,
-                         PRINCIPIA_MAX4(al + ar, al + pr, pl + ar, pl + pr),
-                         PRINCIPIA_MAX3(al + pr, pl + ar, pl + pr),
-                         E>
-  friend operator*(PiecewisePoissonSeries<L, al, pl, E> const& left,
-                   PoissonSeries<R, ar, pr, E> const& right);
+                         std::max({al + ar, al + pr, pl + ar, pl + pr}),
+                         std::max({al + pr, pl + ar, pl + pr})>
+  friend operator*(PiecewisePoissonSeries<L, al, pl> const& left,
+                   PoissonSeries<R, ar, pr> const& right);
   template<typename L, typename R,
-           int al, int pl, int ar, int pr, int aw, int pw,
-           template<typename, typename, int> class E>
+           int al, int pl, int ar, int pr, int aw, int pw>
   typename Hilbert<L, R>::InnerProductType
-  friend InnerProduct(PoissonSeries<L, al, pl, E> const& left,
-                      PiecewisePoissonSeries<R, ar, pr, E> const& right,
-                      PoissonSeries<double, aw, pw, E> const& weight,
+  friend InnerProduct(PoissonSeries<L, al, pl> const& left,
+                      PiecewisePoissonSeries<R, ar, pr> const& right,
+                      PoissonSeries<double, aw, pw> const& weight,
                       Instant const& t_min,
                       Instant const& t_max,
                       std::optional<int> max_points);
   template<typename L, typename R,
-           int al, int pl, int ar, int pr, int aw, int pw,
-           template<typename, typename, int> class E>
+           int al, int pl, int ar, int pr, int aw, int pw>
   typename Hilbert<L, R>::InnerProductType
-  friend InnerProduct(PiecewisePoissonSeries<L, al, pl, E> const& left,
-                      PoissonSeries<R, ar, pr, E> const& right,
-                      PoissonSeries<double, aw, pw, E> const& weight,
+  friend InnerProduct(PiecewisePoissonSeries<L, al, pl> const& left,
+                      PoissonSeries<R, ar, pr> const& right,
+                      PoissonSeries<double, aw, pw> const& weight,
                       Instant const& t_min,
                       Instant const& t_max,
                       std::optional<int> max_points);
-  template<typename V, int ad, int pd,
-           template<typename, typename, int> class E,
-           typename O>
+  template<typename V, int ad, int pd, typename O>
   friend std::string mathematica::_mathematica::internal::ToMathematicaBody(
-      PiecewisePoissonSeries<V, ad, pd, E> const& polynomial,
+      PiecewisePoissonSeries<V, ad, pd> const& polynomial,
       O express_in);
 };
 
@@ -234,193 +210,148 @@ class PiecewisePoissonSeries {
 // while piecewise Poisson series have an algebra structure, we do not need it.
 
 template<typename Value,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
-PiecewisePoissonSeries<Value, aperiodic_rdegree, periodic_rdegree, Evaluator>
-operator+(PiecewisePoissonSeries<Value,
-                                 aperiodic_rdegree, periodic_rdegree,
-                                 Evaluator> const& right);
+         int aperiodic_rdegree, int periodic_rdegree>
+PiecewisePoissonSeries<Value, aperiodic_rdegree, periodic_rdegree>
+operator+(PiecewisePoissonSeries<
+              Value, aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
-PiecewisePoissonSeries<Value, aperiodic_rdegree, periodic_rdegree, Evaluator>
-operator-(PiecewisePoissonSeries<Value,
-                                 aperiodic_rdegree, periodic_rdegree,
-                                 Evaluator> const& right);
+         int aperiodic_rdegree, int periodic_rdegree>
+PiecewisePoissonSeries<Value, aperiodic_rdegree, periodic_rdegree>
+operator-(PiecewisePoissonSeries<
+               Value, aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Scalar,
          typename Value,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Product<Scalar, Value>,
-                       aperiodic_rdegree, periodic_rdegree,
-                       Evaluator>
+                       aperiodic_rdegree, periodic_rdegree>
 operator*(Scalar const& left,
-          PiecewisePoissonSeries<Value,
-                                 aperiodic_rdegree, periodic_rdegree,
-                                 Evaluator> const& right);
+          PiecewisePoissonSeries<
+              Value, aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Scalar,
          typename Value,
-         int aperiodic_ldegree, int periodic_ldegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_ldegree, int periodic_ldegree>
 PiecewisePoissonSeries<Product<Value, Scalar>,
-                       aperiodic_ldegree, periodic_ldegree,
-                       Evaluator>
-operator*(PiecewisePoissonSeries<Value,
-                                 aperiodic_ldegree, periodic_ldegree,
-                                 Evaluator> const& left,
+                       aperiodic_ldegree, periodic_ldegree>
+operator*(PiecewisePoissonSeries<
+              Value, aperiodic_ldegree, periodic_ldegree> const& left,
           Scalar const& right);
 
 template<typename Scalar,
          typename Value,
-         int aperiodic_ldegree, int periodic_ldegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_ldegree, int periodic_ldegree>
 PiecewisePoissonSeries<Quotient<Value, Scalar>,
-                       aperiodic_ldegree, periodic_ldegree,
-                       Evaluator>
-operator/(PiecewisePoissonSeries<Value,
-                                 aperiodic_ldegree, periodic_ldegree,
-                                 Evaluator> const& left,
+                       aperiodic_ldegree, periodic_ldegree>
+operator/(PiecewisePoissonSeries<
+              Value, aperiodic_ldegree, periodic_ldegree> const& left,
           Scalar const& right);
 
 // Action of Poisson series on piecewise Poisson series.
 
 template<typename Value,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Value,
-                       PRINCIPIA_MAX(aperiodic_ldegree, aperiodic_rdegree),
-                       PRINCIPIA_MAX(periodic_ldegree, periodic_rdegree),
-                       Evaluator>
+                       std::max(aperiodic_ldegree, aperiodic_rdegree),
+                       std::max(periodic_ldegree, periodic_rdegree)>
 operator+(PoissonSeries<Value,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
-          PiecewisePoissonSeries<Value,
-                                 aperiodic_rdegree, periodic_rdegree,
-                                 Evaluator> const& right);
+                        aperiodic_ldegree, periodic_ldegree> const& left,
+          PiecewisePoissonSeries<
+               Value, aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Value,
-                       PRINCIPIA_MAX(aperiodic_ldegree, aperiodic_rdegree),
-                       PRINCIPIA_MAX(periodic_ldegree, periodic_rdegree),
-                       Evaluator>
-operator+(PiecewisePoissonSeries<Value,
-                                 aperiodic_ldegree, periodic_ldegree,
-                                 Evaluator> const& left,
+                       std::max(aperiodic_ldegree, aperiodic_rdegree),
+                       std::max(periodic_ldegree, periodic_rdegree)>
+operator+(PiecewisePoissonSeries<
+              Value, aperiodic_ldegree, periodic_ldegree> const& left,
           PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Value,
-                       PRINCIPIA_MAX(aperiodic_ldegree, aperiodic_rdegree),
-                       PRINCIPIA_MAX(periodic_ldegree, periodic_rdegree),
-                       Evaluator>
+                       std::max(aperiodic_ldegree, aperiodic_rdegree),
+                       std::max(periodic_ldegree, periodic_rdegree)>
 operator-(PoissonSeries<Value,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
-          PiecewisePoissonSeries<Value,
-                                 aperiodic_rdegree, periodic_rdegree,
-                                 Evaluator> const& right);
+                        aperiodic_ldegree, periodic_ldegree> const& left,
+          PiecewisePoissonSeries<
+              Value, aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename Value,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Value,
-                       PRINCIPIA_MAX(aperiodic_ldegree, aperiodic_rdegree),
-                       PRINCIPIA_MAX(periodic_ldegree, periodic_rdegree),
-                       Evaluator>
-operator-(PiecewisePoissonSeries<Value,
-                                 aperiodic_ldegree, periodic_ldegree,
-                                 Evaluator> const& left,
+                       std::max(aperiodic_ldegree, aperiodic_rdegree),
+                       std::max(periodic_ldegree, periodic_rdegree)>
+operator-(PiecewisePoissonSeries<
+              Value, aperiodic_ldegree, periodic_ldegree> const& left,
           PoissonSeries<Value,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename LValue, typename RValue,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Product<LValue, RValue>,
-                       PRINCIPIA_MAX4(aperiodic_ldegree + aperiodic_rdegree,
-                                      aperiodic_ldegree + periodic_rdegree,
-                                      periodic_ldegree + aperiodic_rdegree,
-                                      periodic_ldegree + periodic_rdegree),
-                       PRINCIPIA_MAX3(aperiodic_ldegree + periodic_rdegree,
-                                      periodic_ldegree + aperiodic_rdegree,
-                                      periodic_ldegree + periodic_rdegree),
-                       Evaluator>
+                       std::max({aperiodic_ldegree + aperiodic_rdegree,
+                                 aperiodic_ldegree + periodic_rdegree,
+                                 periodic_ldegree + aperiodic_rdegree,
+                                 periodic_ldegree + periodic_rdegree}),
+                       std::max({aperiodic_ldegree + periodic_rdegree,
+                                 periodic_ldegree + aperiodic_rdegree,
+                                 periodic_ldegree + periodic_rdegree})>
 operator*(PoissonSeries<LValue,
-                        aperiodic_ldegree, periodic_ldegree,
-                        Evaluator> const& left,
-          PiecewisePoissonSeries<RValue,
-                                 aperiodic_rdegree, periodic_rdegree,
-                                 Evaluator> const& right);
+                        aperiodic_ldegree, periodic_ldegree> const& left,
+          PiecewisePoissonSeries<
+              RValue, aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<typename LValue, typename RValue,
          int aperiodic_ldegree, int periodic_ldegree,
-         int aperiodic_rdegree, int periodic_rdegree,
-         template<typename, typename, int> class Evaluator>
+         int aperiodic_rdegree, int periodic_rdegree>
 PiecewisePoissonSeries<Product<LValue, RValue>,
-                       PRINCIPIA_MAX4(aperiodic_ldegree + aperiodic_rdegree,
-                                      aperiodic_ldegree + periodic_rdegree,
-                                      periodic_ldegree + aperiodic_rdegree,
-                                      periodic_ldegree + periodic_rdegree),
-                       PRINCIPIA_MAX3(aperiodic_ldegree + periodic_rdegree,
-                                      periodic_ldegree + aperiodic_rdegree,
-                                      periodic_ldegree + periodic_rdegree),
-                       Evaluator>
-operator*(PiecewisePoissonSeries<LValue,
-                                 aperiodic_ldegree, periodic_ldegree,
-                                 Evaluator> const& left,
+                       std::max({aperiodic_ldegree + aperiodic_rdegree,
+                                 aperiodic_ldegree + periodic_rdegree,
+                                 periodic_ldegree + aperiodic_rdegree,
+                                 periodic_ldegree + periodic_rdegree}),
+                       std::max({aperiodic_ldegree + periodic_rdegree,
+                                 periodic_ldegree + aperiodic_rdegree,
+                                 periodic_ldegree + periodic_rdegree})>
+operator*(PiecewisePoissonSeries<
+              LValue, aperiodic_ldegree, periodic_ldegree> const& left,
           PoissonSeries<RValue,
-                        aperiodic_rdegree, periodic_rdegree,
-                        Evaluator> const& right);
+                        aperiodic_rdegree, periodic_rdegree> const& right);
 
 template<
     typename LValue, typename RValue,
     int aperiodic_ldegree, int periodic_ldegree,
     int aperiodic_rdegree, int periodic_rdegree,
-    int aperiodic_wdegree, int periodic_wdegree,
-    template<typename, typename, int> class Evaluator>
+    int aperiodic_wdegree, int periodic_wdegree>
 typename Hilbert<LValue, RValue>::InnerProductType InnerProduct(
     PoissonSeries<LValue,
-                  aperiodic_ldegree, periodic_ldegree,
-                  Evaluator> const& left,
-    PiecewisePoissonSeries<RValue,
-                           aperiodic_rdegree, periodic_rdegree,
-                           Evaluator> const& right,
+                  aperiodic_ldegree, periodic_ldegree> const& left,
+    PiecewisePoissonSeries<
+        RValue, aperiodic_rdegree, periodic_rdegree> const& right,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree,
-                  Evaluator> const& weight,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
     std::optional<int> max_points = std::nullopt);
 
 template<
     typename LValue, typename RValue,
     int aperiodic_ldegree, int periodic_ldegree,
     int aperiodic_rdegree, int periodic_rdegree,
-    int aperiodic_wdegree, int periodic_wdegree,
-    template<typename, typename, int> class Evaluator>
+    int aperiodic_wdegree, int periodic_wdegree>
 typename Hilbert<LValue, RValue>::InnerProductType InnerProduct(
     PoissonSeries<LValue,
-                  aperiodic_ldegree, periodic_ldegree,
-                  Evaluator> const& left,
+                  aperiodic_ldegree, periodic_ldegree> const& left,
     PiecewisePoissonSeries<RValue,
-                           aperiodic_rdegree, periodic_rdegree,
-                           Evaluator> const& right,
+                           aperiodic_rdegree, periodic_rdegree> const& right,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree,
-                  Evaluator> const& weight,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
     Instant const& t_min,
     Instant const& t_max,
     std::optional<int> max_points = std::nullopt);
@@ -429,36 +360,28 @@ template<
     typename LValue, typename RValue,
     int aperiodic_ldegree, int periodic_ldegree,
     int aperiodic_rdegree, int periodic_rdegree,
-    int aperiodic_wdegree, int periodic_wdegree,
-    template<typename, typename, int> class Evaluator>
+    int aperiodic_wdegree, int periodic_wdegree>
 typename Hilbert<LValue, RValue>::InnerProductType InnerProduct(
     PiecewisePoissonSeries<LValue,
-                           aperiodic_ldegree, periodic_ldegree,
-                           Evaluator> const& left,
+                           aperiodic_ldegree, periodic_ldegree> const& left,
     PoissonSeries<RValue,
-                  aperiodic_rdegree, periodic_rdegree,
-                  Evaluator> const& right,
+                  aperiodic_rdegree, periodic_rdegree> const& right,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree,
-                  Evaluator> const& weight,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
     std::optional<int> max_points = std::nullopt);
 
 template<
     typename LValue, typename RValue,
     int aperiodic_ldegree, int periodic_ldegree,
     int aperiodic_rdegree, int periodic_rdegree,
-    int aperiodic_wdegree, int periodic_wdegree,
-    template<typename, typename, int> class Evaluator>
+    int aperiodic_wdegree, int periodic_wdegree>
 typename Hilbert<LValue, RValue>::InnerProductType InnerProduct(
     PiecewisePoissonSeries<LValue,
-                           aperiodic_ldegree, periodic_ldegree,
-                           Evaluator> const& left,
+                           aperiodic_ldegree, periodic_ldegree> const& left,
     PoissonSeries<RValue,
-                  aperiodic_rdegree, periodic_rdegree,
-                  Evaluator> const& right,
+                  aperiodic_rdegree, periodic_rdegree> const& right,
     PoissonSeries<double,
-                  aperiodic_wdegree, periodic_wdegree,
-                  Evaluator> const& weight,
+                  aperiodic_wdegree, periodic_wdegree> const& weight,
     Instant const& t_min,
     Instant const& t_max,
     std::optional<int> max_points = std::nullopt);

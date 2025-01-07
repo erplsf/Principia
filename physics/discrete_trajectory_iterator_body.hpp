@@ -2,7 +2,6 @@
 
 #include "physics/discrete_trajectory_iterator.hpp"
 
-#include "astronomy/epoch.hpp"
 #include "geometry/instant.hpp"
 
 namespace principia {
@@ -42,7 +41,7 @@ DiscreteTrajectoryIterator<Frame>::operator--() {
   bool const point_is_at_end = is_at_end(point_);
   if (point_is_at_end) {
     // Move the iterator to the end of the last segment.
-    segment_ = std::prev(segment_.segments().end());
+    segment_ = std::prev(segment_.EndSegment());
     point_ = segment_->timeline_end();
     // Now proceed with the decrement.
   }
@@ -103,7 +102,7 @@ DiscreteTrajectoryIterator<Frame>::operator+=(difference_type const n) {
     while (m > 0) {
       CHECK(!is_at_end(point_));
       auto& point = iterator(point_);
-      // We know that operator++ never leaves |point_| at |timeline_begin()|.
+      // We know that operator++ never leaves `point_` at `timeline_begin()`.
       // Therefore, to detect that we are in a new segment, we must check for
       // the second point of the segment.
       if (segment_->timeline_size() > 2 &&
@@ -137,8 +136,8 @@ DiscreteTrajectoryIterator<Frame>::operator-=(difference_type const n) {
     // (it would fall back to vanilla decrements).
     while (m > 0) {
       auto& point = iterator(point_);
-      // We know that operator-- never leaves |point_| at
-      // |std::prev(timeline_end())|.  Therefore, to detect that we are in a new
+      // We know that operator-- never leaves `point_` at
+      // `std::prev(timeline_end())`.  Therefore, to detect that we are in a new
       // segment, we must check for the second-to-last point of the segment.
       if (segment_->timeline_size() > 2 &&
           segment_->timeline_size() <= m + 2 &&

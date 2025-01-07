@@ -4,26 +4,33 @@
 #include <list>
 #include <memory>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "astronomy/time_scales.hpp"
 #include "base/not_null.hpp"
 #include "geometry/barycentre_calculator.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/r3x3_matrix.hpp"
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "ksp_plugin/celestial.hpp"
+#include "ksp_plugin/flight_plan.hpp"
 #include "ksp_plugin/frames.hpp"
+#include "ksp_plugin/identification.hpp"
 #include "ksp_plugin/integrators.hpp"
+#include "ksp_plugin/part.hpp"
+#include "ksp_plugin/pile_up.hpp"
 #include "ksp_plugin/plugin.hpp"
 #include "ksp_plugin_test/plugin_io.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "physics/ephemeris.hpp"
 #include "physics/massive_body.hpp"
-#include "physics/mock_ephemeris.hpp"
+#include "physics/mock_ephemeris.hpp"  // 🧙 For MockEphemeris.
 #include "physics/rigid_motion.hpp"
 #include "physics/rotating_body.hpp"
 #include "physics/tensors.hpp"
@@ -64,8 +71,8 @@ using namespace principia::ksp_plugin::_integrators;
 using namespace principia::ksp_plugin::_part;
 using namespace principia::ksp_plugin::_pile_up;
 using namespace principia::ksp_plugin::_plugin;
-using namespace principia::ksp_plugin::_plugin_io;
 using namespace principia::ksp_plugin::_vessel;
+using namespace principia::ksp_plugin_test::_plugin_io;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_discrete_trajectory;
 using namespace principia::physics::_ephemeris;
@@ -133,9 +140,11 @@ class VesselTest : public testing::Test {
     vessel_.checkpointer_->WriteToMessage(message->mutable_checkpoint());
   }
 
-  MockEphemeris<Barycentric> ephemeris_;
+  std::vector<not_null<MassiveBody const*>> const bodies_;
   RotatingBody<Barycentric> const body_;
   Celestial const celestial_;
+  MockEphemeris<Barycentric> ephemeris_;
+
   PartId const part_id1_ = 111;
   PartId const part_id2_ = 222;
   Mass const mass1_ = 1 * Kilogram;
@@ -197,8 +206,7 @@ TEST_F(VesselTest, PrepareHistory) {
       .Times(AnyNumber());
   vessel_.CreateTrajectoryIfNeeded(t0_ + 1 * Second);
 
-  auto const expected_dof = Barycentre<DegreesOfFreedom<Barycentric>, Mass>(
-      {p1_dof_, p2_dof_}, {mass1_, mass2_});
+  auto const expected_dof = Barycentre({p1_dof_, p2_dof_}, {mass1_, mass2_});
 
   EXPECT_EQ(1, vessel_.psychohistory()->size());
   EXPECT_EQ(t0_ + 1 * Second,
@@ -244,8 +252,7 @@ TEST_F(VesselTest, AdvanceTime) {
   vessel_.AdvanceTime();
 
   auto const expected_vessel_psychohistory = NewLinearTrajectoryTimeline(
-      Barycentre<DegreesOfFreedom<Barycentric>, Mass>({p1_dof_, p2_dof_},
-                                                      {mass1_, mass2_}),
+      Barycentre({p1_dof_, p2_dof_}, {mass1_, mass2_}),
       /*Δt=*/0.5 * Second,
       /*t1=*/t0_,
       /*t2=*/t0_ + 1.1 * Second);
@@ -273,17 +280,15 @@ TEST_F(VesselTest, Prediction) {
 
   // The call to fill the prognostication until t_max.
   auto const expected_vessel_prediction = NewLinearTrajectoryTimeline(
-      Barycentre<DegreesOfFreedom<Barycentric>, Mass>({p1_dof_, p2_dof_},
-                                                      {mass1_, mass2_}),
+      Barycentre({p1_dof_, p2_dof_}, {mass1_, mass2_}),
       /*Δt=*/0.5 * Second,
       /*t1=*/t0_,
       /*t2=*/t0_ + 2 * Second);
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, t0_ + 2 * Second, _, _))
-      .WillOnce(DoAll(
+      .WillRepeatedly(DoAll(
           AppendPointsToDiscreteTrajectory(&expected_vessel_prediction),
-          Return(absl::OkStatus())))
-      .WillRepeatedly(Return(absl::OkStatus()));
+          Return(absl::OkStatus())));
 
   // The call to extend the exphemeris.  Irrelevant since we won't be looking at
   // these points.
@@ -294,10 +299,17 @@ TEST_F(VesselTest, Prediction) {
 
   vessel_.CreateTrajectoryIfNeeded(t0_);
   // Polling for the integration to happen.
+  int count = 0;
   do {
     vessel_.RefreshPrediction(t0_ + 1 * Second);
+    LOG(ERROR) << "Iteration " << count << " back is "
+               << vessel_.prediction()->back().time;
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(100ms);
+    LOG(ERROR) << "Iteration " << count << " back is "
+               << vessel_.prediction()->back().time;
+    ++count;
+    CHECK_LT(count, 1000);
   } while (vessel_.prediction()->back().time == t0_);
 
   EXPECT_EQ(3, vessel_.prediction()->size());
@@ -323,31 +335,27 @@ TEST_F(VesselTest, PredictBeyondTheInfinite) {
 
   // The call to fill the prognostication until t_max.
   auto const expected_vessel_prediction1 = NewLinearTrajectoryTimeline(
-      Barycentre<DegreesOfFreedom<Barycentric>, Mass>({p1_dof_, p2_dof_},
-                                                      {mass1_, mass2_}),
+      Barycentre({p1_dof_, p2_dof_}, {mass1_, mass2_}),
       /*Δt=*/0.5 * Second,
       /*t1=*/t0_,
       /*t2=*/t0_ + 5.5 * Second);
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, t0_ + 5 * Second, _, _))
-      .WillOnce(DoAll(
+      .WillRepeatedly(DoAll(
           AppendPointsToDiscreteTrajectory(&expected_vessel_prediction1),
-          Return(absl::OkStatus())))
-      .WillRepeatedly(Return(absl::OkStatus()));
+          Return(absl::OkStatus())));
 
-  // The call to extend the exphemeris by many points.
+  // The call to extend the prognostication by many points.
   auto const expected_vessel_prediction2 = NewLinearTrajectoryTimeline(
-      Barycentre<DegreesOfFreedom<Barycentric>, Mass>({p1_dof_, p2_dof_},
-                                                      {mass1_, mass2_}),
+      Barycentre({p1_dof_, p2_dof_}, {mass1_, mass2_}),
       /*Δt=*/0.5 * Second,
       /*t1=*/t0_ + 5.5 * Second,
       /*t2=*/t0_ + FlightPlan::max_ephemeris_steps_per_frame * Second);
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, InfiniteFuture, _, _))
-      .WillOnce(DoAll(
+      .WillRepeatedly(DoAll(
           AppendPointsToDiscreteTrajectory(&expected_vessel_prediction2),
-          Return(absl::OkStatus())))
-      .WillRepeatedly(Return(absl::OkStatus()));
+          Return(absl::OkStatus())));
 
   vessel_.CreateTrajectoryIfNeeded(t0_);
   // Polling for the integration to happen.
@@ -375,8 +383,10 @@ TEST_F(VesselTest, PredictBeyondTheInfinite) {
 }
 
 TEST_F(VesselTest, FlightPlan) {
+  EXPECT_CALL(ephemeris_, t_min())
+      .WillRepeatedly(Return(t0_));
   EXPECT_CALL(ephemeris_, t_max())
-      .WillRepeatedly(Return(t0_ + 2 * Second));
+      .WillRepeatedly(Return(t0_ + 4 * Second));
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, InfiniteFuture, _, _))
       .Times(AnyNumber());
@@ -386,8 +396,10 @@ TEST_F(VesselTest, FlightPlan) {
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, t0_ + 3 * Second, _, _))
       .Times(AnyNumber());
-  std::vector<not_null<MassiveBody const*>> const bodies;
-  ON_CALL(ephemeris_, bodies()).WillByDefault(ReturnRef(bodies));
+  EXPECT_CALL(ephemeris_,
+              Prolong(_, _))
+      .Times(AnyNumber());
+  ON_CALL(ephemeris_, bodies()).WillByDefault(ReturnRef(bodies_));
   vessel_.CreateTrajectoryIfNeeded(t0_);
 
   EXPECT_FALSE(vessel_.has_flight_plan());
@@ -794,7 +806,7 @@ TEST_F(VesselTest, SerializationSuccess) {
   EXPECT_CALL(serialization_index_for_pile_up, Call(_)).Times(0);
 
   EXPECT_CALL(ephemeris_, t_max())
-      .WillRepeatedly(Return(t0_ + 2 * Second));
+      .WillRepeatedly(Return(t0_ + 4 * Second));
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, InfiniteFuture, _, _))
       .Times(AnyNumber());
@@ -806,9 +818,11 @@ TEST_F(VesselTest, SerializationSuccess) {
   EXPECT_CALL(ephemeris_,
               FlowWithAdaptiveStep(_, _, t0_ + 3 * Second, _, _))
       .WillRepeatedly(Return(absl::OkStatus()));
+  EXPECT_CALL(ephemeris_,
+              Prolong(_, _))
+      .WillRepeatedly(Return(absl::OkStatus()));
 
-  std::vector<not_null<MassiveBody const*>> const bodies;
-  ON_CALL(ephemeris_, bodies()).WillByDefault(ReturnRef(bodies));
+  ON_CALL(ephemeris_, bodies()).WillByDefault(ReturnRef(bodies_));
 
   vessel_.CreateFlightPlan(t0_ + 3.0 * Second,
                            10 * Kilogram,
@@ -821,7 +835,7 @@ TEST_F(VesselTest, SerializationSuccess) {
   EXPECT_TRUE(message.has_history());
   EXPECT_FALSE(message.flight_plans().empty());
 
-  EXPECT_CALL(ephemeris_, Prolong(_)).Times(2);
+  EXPECT_CALL(ephemeris_, Prolong(_, _)).Times(2);
   auto const v = Vessel::ReadFromMessage(
       message, &celestial_, &ephemeris_, /*deletion_callback=*/nullptr);
   EXPECT_TRUE(v->has_flight_plan());

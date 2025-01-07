@@ -2,17 +2,16 @@
 
 #include "geometry/orthogonal_map.hpp"
 
-#include "geometry/frame.hpp"
-#include "geometry/grassmann.hpp"
-#include "geometry/linear_map.hpp"
-#include "geometry/r3_element.hpp"
-#include "geometry/sign.hpp"
+#include "geometry/rotation.hpp"
 #include "geometry/signature.hpp"
 
 namespace principia {
 namespace geometry {
 namespace _orthogonal_map {
 namespace internal {
+
+using namespace principia::geometry::_rotation;
+using namespace principia::geometry::_signature;
 
 template<typename FromFrame, typename ToFrame>
 Sign OrthogonalMap<FromFrame, ToFrame>::Determinant() const {
@@ -29,7 +28,7 @@ OrthogonalMap<FromFrame, ToFrame>::AsRotation() const {
 template<typename FromFrame, typename ToFrame>
 OrthogonalMap<ToFrame, FromFrame>
 OrthogonalMap<FromFrame, ToFrame>::Inverse() const {
-  // Because |quaternion_| has norm 1, its inverse is just its conjugate.
+  // Because `quaternion_` has norm 1, its inverse is just its conjugate.
   return OrthogonalMap<ToFrame, FromFrame>(quaternion_.Conjugate());
 }
 
@@ -99,10 +98,10 @@ void OrthogonalMap<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 OrthogonalMap<FromFrame, ToFrame>
 OrthogonalMap<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::LinearMap const& message) {
+    serialization::LinearMap const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   LinearMap<OrthogonalMap, FromFrame, ToFrame>::ReadFromMessage(message);
   CHECK(message.HasExtension(serialization::OrthogonalMap::extension));
   return ReadFromMessage(
@@ -116,10 +115,10 @@ void OrthogonalMap<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 OrthogonalMap<FromFrame, ToFrame>
 OrthogonalMap<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::OrthogonalMap const& message) {
+    serialization::OrthogonalMap const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   bool const is_pre_frege = message.has_rotation();
   LOG_IF(WARNING, is_pre_frege) << "Reading pre-Frege OrthogonalMap";
   return OrthogonalMap(

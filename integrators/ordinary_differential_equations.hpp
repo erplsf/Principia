@@ -8,8 +8,8 @@
 #include "base/not_null.hpp"
 #include "geometry/instant.hpp"
 #include "numerics/double_precision.hpp"
-#include "quantities/quantities.hpp"
 #include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "serialization/integrators.pb.h"
 
 namespace principia {
@@ -24,8 +24,12 @@ using namespace principia::numerics::_double_precision;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 
-// The |Solve| function of the |AdaptiveStepSizeIntegrator| exclusively returns
+
+// The `Solve` function of the `AdaptiveStepSizeIntegrator` exclusively returns
 // one of the following statuses.
+// Beware!  Do not RETURN_IF_STOPPED from the right-hand side computation, it's
+// too hard to undo the state changes made half way through the loop of the
+// integrator.
 namespace termination_condition {
 
 constexpr absl::StatusCode Done = absl::StatusCode::kOk;
@@ -36,13 +40,10 @@ constexpr absl::StatusCode ReachedMaximalStepCount = absl::StatusCode::kAborted;
 constexpr absl::StatusCode VanishingStepSize =
     absl::StatusCode::kFailedPrecondition;
 
-// Same as absl::Status::Update, but prefers kAbort.
-void UpdateWithAbort(absl::Status const& updater, absl::Status& updated);
-
 }  // namespace termination_condition
 
 // A differential equation of the form y′ = f(s, y).
-// |DependentVariable| are the types of the elements of y.
+// `DependentVariable` are the types of the elements of y.
 template<typename IndependentVariable_, typename... DependentVariable>
 struct ExplicitFirstOrderOrdinaryDifferentialEquation final {
   static constexpr std::int64_t order = 1;
@@ -54,9 +55,9 @@ struct ExplicitFirstOrderOrdinaryDifferentialEquation final {
   using DependentVariableDerivatives = std::tuple<
       Derivative<DependentVariable, IndependentVariable>...>;
 
-  // A functor that computes f(s, y) and stores it in |y′|.  This functor must
-  // be called with |std::get<i>(y′).size()| equal to |std::get<i>(y).size()|
-  // for all i, but there is no requirement on the values in |y′|.
+  // A functor that computes f(s, y) and stores it in `y′`.  This functor must
+  // be called with `std::get<i>(y′).size()` equal to `std::get<i>(y).size()`
+  // for all i, but there is no requirement on the values in `y′`.
   using RightHandSideComputation =
       std::function<absl::Status(IndependentVariable const& s,
                                  DependentVariables const& y,
@@ -71,9 +72,8 @@ struct ExplicitFirstOrderOrdinaryDifferentialEquation final {
     DoublePrecision<IndependentVariable> s;
     std::tuple<DoublePrecision<DependentVariable>...> y;
 
-    friend bool operator==(State const& lhs, State const& rhs) {
-      return lhs.y == rhs.y && lhs.s == rhs.s;
-    }
+    friend bool operator==(State const& lhs, State const& rhs) = default;
+    friend bool operator!=(State const& lhs, State const& rhs) = default;
 
     void WriteToMessage(not_null<serialization::State*> message) const;
     static State ReadFromMessage(serialization::State const& message);
@@ -83,7 +83,7 @@ struct ExplicitFirstOrderOrdinaryDifferentialEquation final {
 };
 
 // A differential equation of the form X′ = A(X, t) + B(X, t), where exp(hA) and
-// exp(hB) are known.  |DependentVariable| are the types of the elements of X.
+// exp(hB) are known.  `DependentVariable` are the types of the elements of X.
 // These equations can be solved using splitting methods.
 template<typename... DependentVariable>
 struct DecomposableFirstOrderDifferentialEquation final {
@@ -109,21 +109,20 @@ struct DecomposableFirstOrderDifferentialEquation final {
     DoublePrecision<Instant> time;
     std::tuple<std::vector<DoublePrecision<DependentVariable>>...> y;
 
-    friend bool operator==(State const& lhs, State const& rhs) {
-      return lhs.time == rhs.time && lhs.y == rhs.y;
-    }
+    friend bool operator==(State const& lhs, State const& rhs) = default;
+    friend bool operator!=(State const& lhs, State const& rhs) = default;
   };
 
   // left_flow(t₀, t₁, X₀, X₁) sets X₁ to exp((t₁-t₀)A)X₀, and
   // right_flow(t₀, t₁, X₀, X₁) sets X₁ to exp((t₁-t₀)B)X₀.
-  // The |std::vectors| in X₁ must have the same |size()| as those in X₀.  There
+  // The `std::vectors` in X₁ must have the same `size()` as those in X₀.  There
   // is no other requirement on their values.
   Flow left_flow;
   Flow right_flow;
 };
 
 // A differential equation of the form q″ = f(t, q, q′).
-// |DependentVariable_| is the type of q.
+// `DependentVariable_` is the type of q.
 template<typename DependentVariable_>
 struct ExplicitSecondOrderOrdinaryDifferentialEquation final {
   static constexpr std::int64_t order = 2;
@@ -144,10 +143,10 @@ struct ExplicitSecondOrderOrdinaryDifferentialEquation final {
   using DependentVariableDerivatives2 =
       std::vector<DependentVariableDerivative2>;
 
-  // A functor that computes f(t, q, q′) and stores it in |accelerations|.
-  // This functor must be called with |accelerations.size()| equal to
-  // |positions.size()| and |velocities.size()| but there is no requirement on
-  // the values in |accelerations|.
+  // A functor that computes f(t, q, q′) and stores it in `accelerations`.
+  // This functor must be called with `accelerations.size()` equal to
+  // `positions.size()` and `velocities.size()` but there is no requirement on
+  // the values in `accelerations`.
   using RightHandSideComputation =
       std::function<absl::Status(IndependentVariable const& t,
                                  DependentVariables const& positions,
@@ -171,11 +170,8 @@ struct ExplicitSecondOrderOrdinaryDifferentialEquation final {
         DoublePrecision<Derivative<DependentVariable, IndependentVariable>>>
         velocities;
 
-    friend bool operator==(State const& lhs, State const& rhs) {
-      return lhs.positions == rhs.positions &&
-             lhs.velocities == rhs.velocities &&
-             lhs.time == rhs.time;
-    }
+    friend bool operator==(State const& lhs, State const& rhs) = default;
+    friend bool operator!=(State const& lhs, State const& rhs) = default;
 
     void WriteToMessage(not_null<serialization::State*> message) const;
     static State ReadFromMessage(serialization::State const& message);
@@ -185,7 +181,7 @@ struct ExplicitSecondOrderOrdinaryDifferentialEquation final {
 };
 
 // A differential equation of the form q″ = f(t, q).
-// |DependentVariable_| is the type of q.
+// `DependentVariable_` is the type of q.
 template<typename DependentVariable_>
 struct SpecialSecondOrderDifferentialEquation final {
   static constexpr std::int64_t order = 2;
@@ -213,10 +209,10 @@ struct SpecialSecondOrderDifferentialEquation final {
   using State = typename ExplicitSecondOrderOrdinaryDifferentialEquation<
       DependentVariable>::State;
 
-  // A functor that computes f(q, t) and stores it in |accelerations|.
-  // This functor must be called with |accelerations.size()| equal to
-  // |positions.size()|, but there is no requirement on the values in
-  // |acceleration|.
+  // A functor that computes f(q, t) and stores it in `accelerations`.
+  // This functor must be called with `accelerations.size()` equal to
+  // `positions.size()`, but there is no requirement on the values in
+  // `acceleration`.
   RightHandSideComputation compute_acceleration;
 };
 

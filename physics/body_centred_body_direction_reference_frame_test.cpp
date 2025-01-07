@@ -3,25 +3,30 @@
 #include <memory>
 
 #include "astronomy/frames.hpp"
+#include "geometry/barycentre_calculator.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
-#include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "integrators/methods.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
+#include "physics/barycentric_rotating_reference_frame.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/discrete_trajectory.hpp"
 #include "physics/ephemeris.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/rigid_reference_frame.hpp"
 #include "physics/solar_system.hpp"
-#include "quantities/constants.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
 #include "serialization/physics.pb.h"
 #include "testing_utilities/almost_equals.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 #include "testing_utilities/vanishes_before.hpp"
 
@@ -229,11 +234,9 @@ TEST_F(BodyCentredBodyDirectionReferenceFrameTest, ConstructFromOneBody) {
         ephemeris_->trajectory(big_)->EvaluateDegreesOfFreedom(t0_ + t);
     auto const small_dof =
         ephemeris_->trajectory(small_)->EvaluateDegreesOfFreedom(t0_ + t);
-    auto const barycentre =
-        Barycentre<DegreesOfFreedom<ICRS>, GravitationalParameter>(
-            {big_dof, small_dof},
-            {big_->gravitational_parameter(),
-             small_->gravitational_parameter()});
+    auto const barycentre = Barycentre(
+        {big_dof, small_dof},
+        {big_->gravitational_parameter(), small_->gravitational_parameter()});
     EXPECT_THAT(barycentre.velocity().Norm(),
                 VanishesBefore(1 * Kilo(Metre) / Second, 0, 50));
     EXPECT_OK(barycentre_trajectory.Append(t0_ + t, barycentre));
@@ -258,7 +261,7 @@ TEST_F(BodyCentredBodyDirectionReferenceFrameTest, ConstructFromOneBody) {
     EXPECT_THAT(
         (dof_from_discrete.velocity() - dof_from_both_bodies.velocity()).Norm(),
         VanishesBefore(1 * Kilo(Metre) / Second, 0, 93));
-    // For the moment, the |BodyCentredBodyDirectionReferenceFrame| assumes that
+    // For the moment, the `BodyCentredBodyDirectionReferenceFrame` assumes that
     // its reference trajectories are free-falling, and gives us the wrong
     // geometric acceleration when this is not the case.
     auto const intrinsic_acceleration =

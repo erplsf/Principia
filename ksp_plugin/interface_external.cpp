@@ -7,11 +7,18 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "base/array.hpp"
+#include "geometry/frame.hpp"
+#include "geometry/r3_element.hpp"
 #include "journal/method.hpp"
-#include "journal/profiles.hpp"
+#include "journal/profiles.hpp"  // 🧙 For generated profiles.
+#include "ksp_plugin/flight_plan.hpp"
 #include "ksp_plugin/frames.hpp"
+#include "ksp_plugin/vessel.hpp"
 #include "physics/apsides.hpp"
+#include "physics/body_centred_non_rotating_reference_frame.hpp"
 #include "physics/discrete_trajectory.hpp"
+#include "physics/oblate_body.hpp"
+#include "physics/rigid_motion.hpp"
 
 namespace principia {
 namespace interface {
@@ -19,6 +26,7 @@ namespace interface {
 using namespace principia::base::_array;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_r3_element;
+using namespace principia::journal::_method;
 using namespace principia::ksp_plugin::_flight_plan;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::ksp_plugin::_vessel;
@@ -291,12 +299,12 @@ Status* __cdecl principia__ExternalGetNearestPlannedCoastDegreesOfFreedom(
   }
 
   Instant const current_time = plugin->CurrentTime();
-  // The given |World| position and requested |World| degrees of freedom are
-  // body-centred inertial, so |body_centred_inertial| up to an orthogonal map
+  // The given `World` position and requested `World` degrees of freedom are
+  // body-centred inertial, so `body_centred_inertial` up to an orthogonal map
   // to world coordinates.  Do the conversion directly.
-  // NOTE(egg): it is correct to use the orthogonal map at |current_time|,
-  // because |body_centred_inertial| does not rotate with respect to
-  // |Barycentric|, so the orthogonal map does not depend on time.
+  // NOTE(egg): it is correct to use the orthogonal map at `current_time`,
+  // because `body_centred_inertial` does not rotate with respect to
+  // `Barycentric`, so the orthogonal map does not depend on time.
   RigidMotion<Navigation, World> to_world_body_centred_inertial(
       RigidTransformation<Navigation, World>(
           Navigation::origin,
@@ -325,6 +333,7 @@ Status* __cdecl principia__ExternalGetNearestPlannedCoastDegreesOfFreedom(
   ComputeApsides(/*reference=*/immobile_reference,
                  coast,
                  coast.begin(), coast.end(),
+                 /*t_max=*/InfiniteFuture,
                  /*max_points=*/std::numeric_limits<int>::max(),
                  apoapsides,
                  periapsides);

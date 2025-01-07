@@ -4,17 +4,18 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <utility>
 #include <vector>
 
-#include "base/status_utilities.hpp"
 #include "geometry/interval.hpp"
 #include "glog/stl_logging.h"
 #include "numerics/newhall.hpp"
+#include "numerics/poisson_series.hpp"
+#include "numerics/polynomial_in_чебышёв_basis.hpp"
 #include "numerics/ulp_distance.hpp"
-#include "numerics/чебышёв_series.hpp"
 #include "quantities/si.hpp"
 
 namespace principia {
@@ -22,15 +23,11 @@ namespace physics {
 namespace _continuous_trajectory {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_interval;
 using namespace principia::numerics::_newhall;
 using namespace principia::numerics::_poisson_series;
-using namespace principia::numerics::_polynomial;
-using namespace principia::numerics::_polynomial_evaluators;
+using namespace principia::numerics::_polynomial_in_чебышёв_basis;
 using namespace principia::numerics::_ulp_distance;
-using namespace principia::numerics::_чебышёв_series;
-using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
 constexpr int max_degree = 17;
@@ -53,7 +50,8 @@ ContinuousTrajectory<Frame>::ContinuousTrajectory(Time const& step,
       adjusted_tolerance_(tolerance_),
       is_unstable_(false),
       degree_(min_degree),
-      degree_age_(0) {
+      degree_age_(0),
+      polynomial_evaluator_policy_(Policy::AlwaysEstrin()) {
   CHECK_LT(0 * Metre, tolerance_);
 }
 
@@ -138,7 +136,7 @@ void ContinuousTrajectory<Frame>::Prepend(ContinuousTrajectory&& prefix) {
   if (prefix.polynomials_.empty()) {
     // Nothing to do.
   } else if (polynomials_.empty()) {
-    // All the data comes from |prefix|.  This must set all the fields of
+    // All the data comes from `prefix`.  This must set all the fields of
     // this object that are not set at construction.
     adjusted_tolerance_ = prefix.adjusted_tolerance_;
     is_unstable_ = prefix.is_unstable_;
@@ -161,7 +159,7 @@ void ContinuousTrajectory<Frame>::Prepend(ContinuousTrajectory&& prefix) {
               std::back_inserter(prefix.polynomials_));
     polynomials_.swap(prefix.polynomials_);
     first_time_ = prefix.first_time_;
-    // Note that any |last_points_| in |prefix| are irrelevant because they
+    // Note that any `last_points_` in `prefix` are irrelevant because they
     // correspond to a time interval covered by the first polynomial of this
     // object.
   }
@@ -336,6 +334,7 @@ void ContinuousTrajectory<Frame>::WriteToMessage(
   checkpointer_->WriteToMessage(message->mutable_checkpoint());
   step_.WriteToMessage(message->mutable_step());
   tolerance_.WriteToMessage(message->mutable_tolerance());
+  polynomial_evaluator_policy_.WriteToMessage(message->mutable_policy());
 
   // There should be no polynomials before the oldest checkpoint in recent
   // saves, see Ephemeris::AppendMassiveBodiesState.  This has probably been
@@ -359,11 +358,11 @@ void ContinuousTrajectory<Frame>::WriteToMessage(
 }
 
 template<typename Frame>
-template<typename, typename>
 not_null<std::unique_ptr<ContinuousTrajectory<Frame>>>
 ContinuousTrajectory<Frame>::ReadFromMessage(
     Instant const& desired_t_min,
-    serialization::ContinuousTrajectory const& message) {
+    serialization::ContinuousTrajectory const& message)
+  requires serializable<Frame> {
   bool const is_pre_cohen = message.series_size() > 0;
   bool const is_pre_fatou = !message.has_checkpoint_time();
   bool const is_pre_grassmann = message.has_adjusted_tolerance() &&
@@ -376,12 +375,14 @@ ContinuousTrajectory<Frame>::ReadFromMessage(
        message.instant_polynomial_pair(0).polynomial()
            .GetExtension(serialization::PolynomialInMonomialBasis::extension)
            .coefficient(0).has_multivector());
-  LOG_IF(WARNING, is_pre_gröbner)
+  bool const is_pre_کاشانی = !message.has_policy();
+  LOG_IF(WARNING, is_pre_کاشانی)
       << "Reading pre-"
       << (is_pre_cohen       ? "Cohen"
           : is_pre_fatou     ? "Fatou"
           : is_pre_grassmann ? "Grassmann"
-                             : "Gröbner") << " ContinuousTrajectory";
+          : is_pre_gröbner   ? "Gröbner"
+                             : "کاشانی") << " ContinuousTrajectory";
 
   not_null<std::unique_ptr<ContinuousTrajectory<Frame>>> continuous_trajectory =
       std::make_unique<ContinuousTrajectory<Frame>>(
@@ -389,25 +390,30 @@ ContinuousTrajectory<Frame>::ReadFromMessage(
           Length::ReadFromMessage(message.tolerance()));
   if (is_pre_cohen) {
     for (auto const& s : message.series()) {
-      // Read the series, evaluate it and use the resulting values to build a
-      // polynomial in the monomial basis.
-      auto const series =
-          ЧебышёвSeries<Displacement<Frame>>::ReadFromMessage(s);
-      Time const step = (series.t_max() - series.t_min()) / divisions;
-      Instant t = series.t_min();
+      // Read the polynomial, evaluate it and use the resulting values to build
+      // a polynomial in the monomial basis.
+      auto const pre_cohen_чебышёв_series =
+          PolynomialInЧебышёвBasis<Displacement<Frame>, Instant>::
+              ReadFromMessage(s);
+      auto const& polynomial = *pre_cohen_чебышёв_series;
+      Time const step =
+          (polynomial.upper_bound() - polynomial.lower_bound()) / divisions;
+      Instant t = polynomial.lower_bound();
       std::vector<Position<Frame>> q;
       std::vector<Velocity<Frame>> v;
       for (int i = 0; i <= divisions; t += step, ++i) {
-        q.push_back(series.Evaluate(t) + Frame::origin);
-        v.push_back(series.EvaluateDerivative(t));
+        q.push_back(polynomial(t) + Frame::origin);
+        v.push_back(polynomial.EvaluateDerivative(t));
       }
       Displacement<Frame> error_estimate;  // Should we do something with this?
       continuous_trajectory->polynomials_.emplace_back(
-          series.t_max(),
+          polynomial.upper_bound(),
           continuous_trajectory->NewhallApproximationInMonomialBasis(
-              series.degree(),
-              q, v,
-              series.t_min(), series.t_max(),
+              polynomial.degree(),
+              q,
+              v,
+              polynomial.lower_bound(),
+              polynomial.upper_bound(),
               error_estimate));
     }
   } else {
@@ -424,17 +430,53 @@ ContinuousTrajectory<Frame>::ReadFromMessage(
             mutable_coefficient(0)->mutable_point();
         *coefficient0_point->mutable_multivector() = coefficient0_multivector;
 
+        // Note the use of `EstrinWithoutFMA` below.  FMA was introduced in
+        // Grossmann, but unfortunately we didn't notice that it was affecting
+        // existing flight plans, and we have no way to tell that a save is
+        // exactly pre-Grossmann.  On the other hand, we are sure that pre-
+        // Gröbner saves didn't have FMA.  So deserialization is technically
+        // incorrect for Gröbner saves, as we will use FMA when reading, even
+        // though we didn't have FMA when the save was created.
         continuous_trajectory->polynomials_.emplace_back(
             Instant::ReadFromMessage(pair.t_max()),
             Polynomial<Position<Frame>, Instant>::template ReadFromMessage<
-                EstrinEvaluator>(polynomial));
+                EstrinWithoutFMA>(polynomial));
       } else {
-        continuous_trajectory->polynomials_.emplace_back(
-            Instant::ReadFromMessage(pair.t_max()),
-            Polynomial<Position<Frame>, Instant>::template ReadFromMessage<
-                EstrinEvaluator>(pair.polynomial()));
+        serialization::Polynomial const& polynomial = pair.polynomial();
+        if (polynomial.HasExtension(
+                serialization::PolynomialInMonomialBasis::extension) &&
+            polynomial
+                .GetExtension(
+                    serialization::PolynomialInMonomialBasis::extension)
+                .has_evaluator()) {
+          // The post-Καραθεοδωρή path, do not specify an evaluator when calling
+          // `ReadFromMessage`.
+          continuous_trajectory->polynomials_.emplace_back(
+              Instant::ReadFromMessage(pair.t_max()),
+              Polynomial<Position<Frame>, Instant>::ReadFromMessage(
+                  polynomial));
+        } else {
+          // The pre-Καραθεοδωρή path.
+          continuous_trajectory->polynomials_.emplace_back(
+              Instant::ReadFromMessage(pair.t_max()),
+              Polynomial<Position<Frame>, Instant>::template ReadFromMessage<
+                  Estrin>(polynomial));
+        }
       }
     }
+  }
+  if (is_pre_کاشانی) {
+    // See the comment above for the defaults here.
+    if (is_pre_gröbner) {
+      continuous_trajectory->polynomial_evaluator_policy_ =
+          Policy::AlwaysEstrinWithoutFMA();
+    } else {
+      continuous_trajectory->polynomial_evaluator_policy_ =
+          Policy::AlwaysEstrin();
+    }
+  } else {
+    continuous_trajectory->polynomial_evaluator_policy_ =
+        Policy::ReadFromMessage(message.policy());
   }
   if (message.has_first_time()) {
     continuous_trajectory->first_time_ =
@@ -473,7 +515,7 @@ ContinuousTrajectory<Frame>::ReadFromMessage(
   // There should always be a checkpoint, either at the end of the trajectory,
   // in the pre-Grassmann compatibility case; or at the first point of the
   // trajectory, for modern saves (see the comment in WriteToMessage).  In the
-  // pre-Grassman case the (only) checkpoint may be after |desired_t_min|, but
+  // pre-Grassman case the (only) checkpoint may be after `desired_t_min`, but
   // then we should have polynomials covering that time, see #3039.
   auto const status =
       continuous_trajectory->checkpointer_->ReadFromCheckpointAtOrBefore(
@@ -502,7 +544,7 @@ absl::Status ContinuousTrajectory<Frame>::ReadFromCheckpointAt(
 template<typename Frame>
 Checkpointer<serialization::ContinuousTrajectory>::Writer
 ContinuousTrajectory<Frame>::MakeCheckpointerWriter() {
-  if constexpr (is_serializable_v<Frame>) {
+  if constexpr (serializable<Frame>) {
     return [this](
         not_null<
             serialization::ContinuousTrajectory::Checkpoint*> const message) {
@@ -529,7 +571,7 @@ ContinuousTrajectory<Frame>::MakeCheckpointerWriter() {
 template<typename Frame>
 Checkpointer<serialization::ContinuousTrajectory>::Reader
 ContinuousTrajectory<Frame>::MakeCheckpointerReader() {
-  if constexpr (is_serializable_v<Frame>) {
+  if constexpr (serializable<Frame>) {
     return [this](
                serialization::ContinuousTrajectory::Checkpoint const& message) {
       absl::MutexLock l(&lock_);
@@ -637,7 +679,8 @@ ContinuousTrajectory<Frame>::ContinuousTrajectory()
           make_not_null_unique<
               Checkpointer<serialization::ContinuousTrajectory>>(
           /*reader=*/nullptr,
-          /*writer=*/nullptr)) {}
+          /*writer=*/nullptr)),
+          polynomial_evaluator_policy_(Policy::AlwaysEstrin()) {}
 
 template<typename Frame>
 ContinuousTrajectory<Frame>::InstantPolynomialPair::InstantPolynomialPair(
@@ -657,10 +700,11 @@ ContinuousTrajectory<Frame>::NewhallApproximationInMonomialBasis(
     Instant const& t_max,
     Displacement<Frame>& error_estimate) const {
   return numerics::_newhall::NewhallApproximationInMonomialBasis<
-             Position<Frame>, EstrinEvaluator>(degree,
-                                               q, v,
-                                               t_min, t_max,
-                                               error_estimate);
+             Position<Frame>>(degree,
+                              q, v,
+                              t_min, t_max,
+                              polynomial_evaluator_policy_,
+                              error_estimate);
 }
 
 template<typename Frame>
@@ -691,8 +735,8 @@ absl::Status ContinuousTrajectory<Frame>::ComputeBestNewhallApproximation(
                                 last_points_.cbegin()->first, time,
                                 displacement_error_estimate));
 
-  // Estimate the error.  For initializing |previous_error_estimate|, any value
-  // greater than |error_estimate| will do.
+  // Estimate the error.  For initializing `previous_error_estimate`, any value
+  // greater than `error_estimate` will do.
   Length error_estimate = displacement_error_estimate.Norm();
   Length previous_error_estimate = error_estimate + error_estimate;
 
@@ -770,7 +814,7 @@ template<typename Frame>
 typename ContinuousTrajectory<Frame>::InstantPolynomialPairs::const_iterator
 ContinuousTrajectory<Frame>::FindPolynomialForInstantLocked(
     Instant const& time) const {
-  // This returns the first polynomial |p| such that |time <= p.t_max|.
+  // This returns the first polynomial `p` such that `time <= p.t_max`.
   {
     auto const begin = polynomials_.begin();
     auto const it = begin + last_accessed_polynomial_;

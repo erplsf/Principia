@@ -1,14 +1,14 @@
 #include "base/not_null.hpp"
 
 #include <memory>
-#include <utility>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "base/macros.hpp"
-#include "gtest/gtest.h"
+#include "base/macros.hpp"  // 🧙 For PRINCIPIA_COMPILER_MSVC.
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 
 using ::testing::Eq;
 
@@ -83,8 +83,17 @@ TEST_F(NotNullTest, Move) {
       _MSC_FULL_VER == 192'930'147 || \
       _MSC_FULL_VER == 193'431'937 || \
       _MSC_FULL_VER == 193'431'942 || \
+      _MSC_FULL_VER == 193'431'944 || \
       _MSC_FULL_VER == 193'532'216 || \
-      _MSC_FULL_VER == 193'532'217)
+      _MSC_FULL_VER == 193'532'217 || \
+      _MSC_FULL_VER == 193'632'532 || \
+      _MSC_FULL_VER == 193'632'535 || \
+      _MSC_FULL_VER == 193'732'822 || \
+      _MSC_FULL_VER == 193'833'135 || \
+      _MSC_FULL_VER == 193'933'523 || \
+      _MSC_FULL_VER == 194'033'813 || \
+      _MSC_FULL_VER == 194'134'120 || \
+      _MSC_FULL_VER == 194'134'123)
   EXPECT_THAT(*(std::unique_ptr<int> const&)int_ptr1, Eq(3));
 #endif
   not_null<std::unique_ptr<int>> int_ptr2 = std::move(int_ptr1);
@@ -216,24 +225,24 @@ TEST_F(NotNullTest, RValue) {
   not_null<std::unique_ptr<int>> not_null_owner_int =
       make_not_null_unique<int>(4);
   std::vector<int*> v1;
-  // |v1.push_back| would be ambiguous here if |not_null<pointer>| had an
-  // |operator pointer const&() const&| instead of an
-  // |operator pointer const&&() const&|.
+  // `v1.push_back` would be ambiguous here if `not_null<pointer>` had an
+  // `operator pointer const&() const&` instead of an
+  // `operator pointer const&&() const&`.
   v1.push_back(not_null_owner_int.get());
-  // |emplace_back| is fine no matter what.
+  // `emplace_back` is fine no matter what.
   v1.emplace_back(not_null_owner_int.get());
   EXPECT_EQ(4, *v1[0]);
   EXPECT_EQ(4, *not_null_owner_int);
 
   std::vector<int*> v2;
   // NOTE(egg): The following fails using clang, I'm not sure where the bug is.
-  // More generally, if functions |foo(int*&&)| and |foo(int* const&)| exist,
-  // |foo(non_rvalue_not_null)| fails to compile with clang ("no viable
-  // conversion"), but without the |foo(int*&&)| overload it compiles.
+  // More generally, if functions `foo(int*&&)` and `foo(int* const&)` exist,
+  // `foo(non_rvalue_not_null)` fails to compile with clang ("no viable
+  // conversion"), but without the `foo(int*&&)` overload it compiles.
   // This is easily circumvented using a temporary (whereas the ambiguity that
-  // would result from having an |operator pointer const&() const&| would
-  // entirely prevent conversion of |not_null<unique_ptr<T>>| to
-  // |unique_ptr<T>|), so we ignore it.
+  // would result from having an `operator pointer const&() const&` would
+  // entirely prevent conversion of `not_null<unique_ptr<T>>` to
+  // `unique_ptr<T>`), so we ignore it.
 #if PRINCIPIA_COMPILER_MSVC
   v2.push_back(not_null_int);
 #else
@@ -243,10 +252,10 @@ TEST_F(NotNullTest, RValue) {
   EXPECT_EQ(2, *v2[0]);
   EXPECT_EQ(2, *not_null_int);
 
-  // |std::unique_ptr<int>::operator=| would be ambiguous here between the move
-  // and copy assignments if |not_null<pointer>| had an
-  // |operator pointer const&() const&| instead of an
-  // |operator pointer const&&() const&|.
+  // `std::unique_ptr<int>::operator=` would be ambiguous here between the move
+  // and copy assignments if `not_null<pointer>` had an
+  // `operator pointer const&() const&` instead of an
+  // `operator pointer const&&() const&`.
   // Note that one of the overloads (the implicit copy assignment operator) is
   // deleted, but this does not matter for overload resolution; however MSVC
   // compiles this even when it is ambiguous, while clang correctly fails.
@@ -256,21 +265,21 @@ TEST_F(NotNullTest, RValue) {
   [[maybe_unused]] int const* access_const_int = not_null_access_int;
 
   not_null<std::shared_ptr<int>> not_null_shared_int = std::make_shared<int>(3);
-  // This exercises |operator OtherPointer() const&|.  The conversion from
-  // |not_null<int*>| to |int const*| does not; instead it goes through the
-  // conversion |not_null<int*>| -> |int*| -> |int const*|, where the latter is
+  // This exercises `operator OtherPointer() const&`.  The conversion from
+  // `not_null<int*>` to `int const*` does not; instead it goes through the
+  // conversion `not_null<int*>` -> `int*` -> `int const*`, where the latter is
   // a qualification adjustment, part of a standard conversion sequence.
   std::shared_ptr<int const> shared_const_int = not_null_shared_int;
 
   // MSVC seems to be confused by templatized move-conversion operators.
 #if PRINCIPIA_COMPILER_MSVC
-  // Uses |not_null(not_null<OtherPointer>&& other)| followed by
-  // |operator pointer&&() &&|, so the first conversion has to be explicit.
+  // Uses `not_null(not_null<OtherPointer>&& other)` followed by
+  // `operator pointer&&() &&`, so the first conversion has to be explicit.
   std::unique_ptr<int const> owner_const_int =
       static_cast<not_null<std::unique_ptr<int const>>>(
           make_not_null_unique<int>(5));
 #else
-  // Uses |operator OtherPointer() &&|.
+  // Uses `operator OtherPointer() &&`.
   std::unique_ptr<int const> owner_const_int = make_not_null_unique<int>(5);
 #endif
   EXPECT_EQ(5, *owner_const_int);

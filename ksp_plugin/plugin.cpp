@@ -8,6 +8,7 @@
 #include <limits>
 #include <list>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -16,43 +17,39 @@
 #include <vector>
 
 #include "absl/status/status.h"
-#include "astronomy/epoch.hpp"
 #include "astronomy/solar_system_fingerprints.hpp"
 #include "astronomy/stabilize_ksp.hpp"
 #include "astronomy/time_scales.hpp"
 #include "base/file.hpp"
+#include "base/fingerprint2011.hpp"
+#include "base/flags.hpp"
 #include "base/hexadecimal.hpp"
 #include "base/map_util.hpp"
-#include "base/not_null.hpp"
-#include "base/optional_logging.hpp"
 #include "base/serialization.hpp"
-#include "base/unique_ptr_logging.hpp"
-#include "geometry/affine_map.hpp"
 #include "geometry/barycentre_calculator.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/identity.hpp"
 #include "geometry/permutation.hpp"
 #include "geometry/r3x3_matrix.hpp"
-#include "geometry/rotation.hpp"
+#include "geometry/sign.hpp"
+#include "geometry/space_transformations.hpp"
 #include "glog/logging.h"
 #include "glog/stl_logging.h"
 #include "ksp_plugin/equator_relevance_threshold.hpp"
 #include "ksp_plugin/integrators.hpp"
 #include "ksp_plugin/part.hpp"
-#include "ksp_plugin/part_subsets.hpp"
+#include "ksp_plugin/part_subsets.hpp"  // 🧙 For Subset<Part>.
 #include "physics/apsides.hpp"
-#include "physics/barycentric_rotating_reference_frame_body.hpp"
+#include "physics/barycentric_rotating_reference_frame.hpp"
 #include "physics/body_centred_body_direction_reference_frame.hpp"
 #include "physics/body_centred_non_rotating_reference_frame.hpp"
-#include "physics/body_surface_reference_frame.hpp"
 #include "physics/body_surface_frame_field.hpp"
-#include "physics/frame_field.hpp"
-#include "physics/massive_body.hpp"
-#include "physics/rigid_reference_frame.hpp"
+#include "physics/body_surface_reference_frame.hpp"
+#include "physics/kepler_orbit.hpp"
+#include "physics/reference_frame.hpp"
 #include "physics/rotating_pulsating_reference_frame.hpp"
 #include "physics/solar_system.hpp"
-#include "quantities/quantities.hpp"
-#include "quantities/si.hpp"
+#include "quantities/parser.hpp"
 
 namespace principia {
 namespace ksp_plugin {
@@ -65,19 +62,17 @@ using namespace principia::astronomy::_stabilize_ksp;
 using namespace principia::astronomy::_time_scales;
 using namespace principia::base::_file;
 using namespace principia::base::_fingerprint2011;
+using namespace principia::base::_flags;
 using namespace principia::base::_hexadecimal;
 using namespace principia::base::_map_util;
-using namespace principia::base::_not_null;
 using namespace principia::base::_serialization;
-using namespace principia::geometry::_affine_map;
 using namespace principia::geometry::_barycentre_calculator;
 using namespace principia::geometry::_frame;
-using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_identity;
 using namespace principia::geometry::_permutation;
 using namespace principia::geometry::_r3x3_matrix;
-using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_sign;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::ksp_plugin::_equator_relevance_threshold;
 using namespace principia::ksp_plugin::_integrators;
 using namespace principia::ksp_plugin::_part;
@@ -85,21 +80,30 @@ using namespace principia::physics::_apsides;
 using namespace principia::physics::_barycentric_rotating_reference_frame;
 using namespace principia::physics::_body_centred_body_direction_reference_frame;  // NOLINT
 using namespace principia::physics::_body_centred_non_rotating_reference_frame;
-using namespace principia::physics::_body_surface_reference_frame;
 using namespace principia::physics::_body_surface_frame_field;
-using namespace principia::physics::_frame_field;
+using namespace principia::physics::_body_surface_reference_frame;
 using namespace principia::physics::_kepler_orbit;
-using namespace principia::physics::_massive_body;
 using namespace principia::physics::_reference_frame;
-using namespace principia::physics::_rigid_motion;
-using namespace principia::physics::_rigid_reference_frame;
 using namespace principia::physics::_rotating_pulsating_reference_frame;
 using namespace principia::physics::_solar_system;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
-using namespace principia::quantities::_si;
+using namespace principia::quantities::_parser;
 
-// Keep this consistent with |prediction_steps_| in |main_window.cs|.
+Length const& MaxCollisionError() {
+  static Length const max_collision_error = []() {
+    std::string_view name = "max_collision_error";
+    if (Flags::IsPresent(name)) {
+      auto const values = Flags::Values(name);
+      CHECK_EQ(values.size(), 1);
+      return ParseQuantity<Length>(
+          *Flags::Values("max_collision_error").begin());
+    } else {
+      return 10 * Metre;
+    }
+  }();
+  return max_collision_error;
+}
+
+// Keep this consistent with `prediction_steps_` in `main_window.cs`.
 constexpr std::int64_t max_steps_in_prediction = 1 << 24;
 
 Plugin::Plugin(std::string const& game_epoch,
@@ -120,10 +124,10 @@ Plugin::Plugin(std::string const& game_epoch,
 
 Plugin::~Plugin() {
   // We must manually destroy the vessels, triggering the destruction of the
-  // parts, which have callbacks to remove themselves from |part_id_to_vessel_|,
+  // parts, which have callbacks to remove themselves from `part_id_to_vessel_`,
   // which must therefore still exist.  This also causes the parts to be
   // destroyed, and therefore to destroy the pile-ups, which want to remove
-  // themselves from |pile_up_|, which also exists.
+  // themselves from `pile_up_`, which also exists.
   vessels_.clear();
 }
 
@@ -260,14 +264,16 @@ void Plugin::EndInitialization() {
 
   // This would use NewBodyCentredNonRotatingNavigationFrame, but we don't have
   // the sun's index at hand.
-  // TODO(egg): maybe these functions should take |Celestial*|s, and we should
-  // then export |FindOrDie(celestials_, _)|.
+  // TODO(egg): maybe these functions should take `Celestial*`s, and we should
+  // then export `FindOrDie(celestials_, _)`.
   renderer_ = std::make_unique<Renderer>(
       sun_,
       make_not_null_unique<
           BodyCentredNonRotatingReferenceFrame<Barycentric, Navigation>>(
               ephemeris_.get(),
               sun_->body()));
+
+  geometric_potential_plotter_.emplace(ephemeris_.get());
 
   // Log the serialized ephemeris.
   serialization::Ephemeris ephemeris_message;
@@ -308,7 +314,7 @@ void Plugin::SetMainBody(Index const index) {
 
 Rotation<BodyWorld, World> Plugin::CelestialRotation(
     Index const index) const {
-  // |BodyWorld| with its y and z axes swapped (so that z is the polar axis).
+  // `BodyWorld` with its y and z axes swapped (so that z is the polar axis).
   using BodyFixed = Frame<struct BodyFixedTag>;
   Permutation<BodyWorld, BodyFixed> const body_mirror(OddPermutation::XZY);
 
@@ -336,7 +342,7 @@ Rotation<CelestialSphere, World> Plugin::CelestialSphereRotation()
 
 Angle Plugin::CelestialInitialRotation(Index const celestial_index) const {
   auto const& body = *FindOrDie(celestials_, celestial_index)->body();
-  // Offset by π/2 since |AngleAt| is with respect to the y axis of the
+  // Offset by π/2 since `AngleAt` is with respect to the y axis of the
   // celestial frame of the body, but KSP counts from the x axis.
   return body.AngleAt(game_epoch_) + π / 2 * Radian;
 }
@@ -373,9 +379,9 @@ void Plugin::InsertOrKeepVessel(GUID const& vessel_guid,
   if (vit == vessels_.end()) {
     // Restore the zombie parameters if we have some, otherwise use the default.
     auto prediction_parameters = DefaultPredictionParameters();
-    auto const pit =
-        zombie_prediction_adaptive_step_parameters_.find(vessel_guid);
-    if (pit != zombie_prediction_adaptive_step_parameters_.end()) {
+    if (auto const pit =
+            zombie_prediction_adaptive_step_parameters_.find(vessel_guid);
+        pit != zombie_prediction_adaptive_step_parameters_.end()) {
       prediction_parameters = pit->second;
       zombie_prediction_adaptive_step_parameters_.erase(pit);
     }
@@ -442,7 +448,7 @@ void Plugin::InsertOrKeepLoadedPart(
   Instant const previous_time = current_time_ - Δt;
   OrthogonalMap<Barycentric, Barycentric> const Δplanetarium_rotation =
       Exp(Δt * angular_velocity_of_world_).Forget<OrthogonalMap>();
-  // TODO(egg): Can we use |BarycentricToWorld| here?
+  // TODO(egg): Can we use `BarycentricToWorld` here?
   BodyCentredNonRotatingReferenceFrame<Barycentric, MainBodyCentred> const
       main_body_frame{ephemeris_.get(),
                       FindOrDie(celestials_, main_body_index)->body()};
@@ -460,9 +466,8 @@ void Plugin::InsertOrKeepLoadedPart(
       main_body_frame.FromThisFrameAtTime(previous_time) *
       world_to_main_body_centred;
 
-  auto it = part_id_to_vessel_.find(part_id);
-  bool const part_found = it != part_id_to_vessel_.end();
-  if (part_found) {
+  if (auto const it = part_id_to_vessel_.find(part_id);
+      it != part_id_to_vessel_.end()) {
     not_null<Vessel*>& associated_vessel = it->second;
     not_null<Vessel*> const current_vessel = associated_vessel;
     if (vessel == current_vessel) {
@@ -522,19 +527,20 @@ void Plugin::ApplyPartIntrinsicTorque(
 }
 
 bool Plugin::PartIsTruthful(PartId const part_id) const {
-  auto const it = part_id_to_vessel_.find(part_id);
-  if (it == part_id_to_vessel_.end()) {
+  if (auto const it = part_id_to_vessel_.find(part_id);
+      it == part_id_to_vessel_.end()) {
     return false;
+  } else {
+    return it->second->part(part_id)->truthful();
   }
-  return it->second->part(part_id)->truthful();
 }
 
 void Plugin::PrepareToReportCollisions() {
   for (auto const& [_, vessel] : vessels_) {
     // NOTE(egg): The lifetime requirement on the second argument of
-    // |MakeSingleton| (which forwards to the argument of the constructor of
-    // |Subset<Part>::Properties|) is that |part| outlives the constructed
-    // |Properties|; since these are owned by |part|, this is true.
+    // `MakeSingleton` (which forwards to the argument of the constructor of
+    // `Subset<Part>::Properties`) is that `part` outlives the constructed
+    // `Properties`; since these are owned by `part`, this is true.
     vessel->ForAllParts(
         [](Part& part) { Subset<Part>::MakeSingleton(part, &part); });
   }
@@ -611,7 +617,7 @@ void Plugin::FreeVesselsAndPartsAndCollectPileUps(Time const& Δt) {
   // are disjoint unions of vessels.
   {
     // Note that we need to go through an intermediate set, since destroying a
-    // vessel destroys its parts, which invalidates the intrusive |Subset| data
+    // vessel destroys its parts, which invalidates the intrusive `Subset` data
     // structure.
     VesselSet grounded_vessels;
     for (auto const& [_, vessel] : vessels_) {
@@ -656,15 +662,15 @@ void Plugin::FreeVesselsAndPartsAndCollectPileUps(Time const& Δt) {
 void Plugin::SetPartApparentRigidMotion(
     PartId const part_id,
     RigidMotion<EccentricPart, ApparentWorld> const& rigid_motion) {
-  // As a reference frame, |Apparent| differs from |World| only by having the
-  // same axes as |Barycentric| and being nonrotating.  However, there is
-  // another semantic distinction: |Apparent...| coordinates are uncorrected
+  // As a reference frame, `Apparent` differs from `World` only by having the
+  // same axes as `Barycentric` and being nonrotating.  However, there is
+  // another semantic distinction: `Apparent...` coordinates are uncorrected
   // data from the game, given immediately after its physics step; before using
   // them, we must correct them in accordance with the data computed by the pile
   // up.  This correction overrides the origin of position and velocity, so we
   // need not worry about the current definition of
-  // |{World::origin, World::unmoving}| as we do when getting the actual degrees
-  // of freedom (via |Plugin::BarycentricToWorld|).
+  // `{World::origin, World::unmoving}` as we do when getting the actual degrees
+  // of freedom (via `Plugin::BarycentricToWorld`).
   RigidMotion<ApparentWorld, Apparent> world_to_apparent{
       RigidTransformation<ApparentWorld, Apparent>{
           ApparentWorld::origin,
@@ -675,7 +681,7 @@ void Plugin::SetPartApparentRigidMotion(
       Identity<Barycentric, Apparent>()(angular_velocity_of_world_),
       Apparent::unmoving};
 
-  not_null<Vessel*> vessel = FindOrDie(part_id_to_vessel_, part_id);
+  not_null<Vessel*> const vessel = FindOrDie(part_id_to_vessel_, part_id);
   CHECK(is_loaded(vessel));
   not_null<Part*> const part = vessel->part(part_id);
   CHECK(part->is_piled_up());
@@ -922,7 +928,7 @@ void Plugin::UpdatePrediction(std::vector<GUID> const& vessel_guids) const {
   Vessel* target_vessel = nullptr;
 
   // If there is a target vessel, ensure that the prediction of the
-  // |predicted_vessels| is not longer than that of the target vessel.  This is
+  // `predicted_vessels` is not longer than that of the target vessel.  This is
   // necessary to build the targeting frame.
   if (renderer_->HasTargetVessel()) {
     target_vessel = &renderer_->GetTargetVessel();
@@ -965,6 +971,7 @@ void Plugin::ExtendPredictionForFlightPlan(GUID const& vessel_guid) const {
   // no guarantee that it will be long enough.  Presumably the user will keep
   // increasing the flight plan length and get what they want, ultimately.
   if (renderer_->HasTargetVessel() && vessel.has_flight_plan()) {
+    vessel.ReadFlightPlanFromMessage();
     auto& target_vessel = renderer_->GetTargetVessel();
     if (target_vessel.prediction()->back().time <
         vessel.flight_plan().actual_final_time()) {
@@ -984,6 +991,7 @@ void Plugin::ComputeAndRenderApsides(
     Trajectory<Barycentric> const& trajectory,
     DiscreteTrajectory<Barycentric>::iterator const& begin,
     DiscreteTrajectory<Barycentric>::iterator const& end,
+    Instant const& t_max,
     Position<World> const& sun_world_position,
     int const max_points,
     DiscreteTrajectory<World>& apoapsides,
@@ -992,8 +1000,8 @@ void Plugin::ComputeAndRenderApsides(
   DiscreteTrajectory<Barycentric> periapsides_trajectory;
   ComputeApsides(FindOrDie(celestials_, celestial_index)->trajectory(),
                  trajectory,
-                 begin,
-                 end,
+                 begin, end,
+                 t_max,
                  max_points,
                  apoapsides_trajectory,
                  periapsides_trajectory);
@@ -1011,6 +1019,68 @@ void Plugin::ComputeAndRenderApsides(
                     PlanetariumRotation());
 }
 
+std::optional<DiscreteTrajectory<World>::value_type>
+Plugin::ComputeAndRenderFirstCollision(
+    Index const celestial_index,
+    Trajectory<Barycentric> const& trajectory,
+    DiscreteTrajectory<Barycentric>::iterator const& begin,
+    DiscreteTrajectory<Barycentric>::iterator const& end,
+    Position<World> const& sun_world_position,
+    int max_points,
+    std::function<Length(Angle const& latitude,
+                         Angle const& longitude)> const& radius) const {
+  auto const& celestial = FindOrDie(celestials_, celestial_index);
+  auto const& celestial_body = *celestial->body();
+  auto const& celestial_trajectory = celestial->trajectory();
+
+  // TODO(phl): We should cache the apsides.
+  DiscreteTrajectory<Barycentric> apoapsides_trajectory;
+  DiscreteTrajectory<Barycentric> periapsides_trajectory;
+  ComputeApsides(celestial_trajectory,
+                 trajectory,
+                 begin, end,
+                 /*t_max=*/InfiniteFuture,
+                 max_points,
+                 apoapsides_trajectory,
+                 periapsides_trajectory);
+
+  const auto intervals = ComputeCollisionIntervals(celestial_body,
+                                                   celestial_trajectory,
+                                                   trajectory,
+                                                   apoapsides_trajectory,
+                                                   periapsides_trajectory);
+
+  VLOG(1) << "Found " << intervals.size() << " collision intervals";
+  for (auto const& interval : intervals) {
+    VLOG(1) << "Collision interval: " << interval;
+    auto const maybe_collision = ComputeFirstCollision(celestial_body,
+                                                       celestial_trajectory,
+                                                       trajectory,
+                                                       interval,
+                                                       MaxCollisionError(),
+                                                       radius);
+    if (maybe_collision.has_value()) {
+      auto const& collision = maybe_collision.value();
+
+      // We create a trajectory with a single point to simplify rendering.
+      DiscreteTrajectory<Barycentric> trajectory_to_render;
+      CHECK_OK(trajectory_to_render.Append(collision.time,
+                                           collision.degrees_of_freedom));
+      DiscreteTrajectory<World> rendered_trajectory =
+          renderer_->RenderBarycentricTrajectoryInWorld(
+              current_time_,
+              trajectory_to_render.begin(),
+              trajectory_to_render.end(),
+              sun_world_position,
+              PlanetariumRotation());
+      return rendered_trajectory.front();
+    }
+  }
+
+  // No collision.
+  return std::nullopt;
+}
+
 void Plugin::ComputeAndRenderClosestApproaches(
     Trajectory<Barycentric> const& trajectory,
     DiscreteTrajectory<Barycentric>::iterator const& begin,
@@ -1024,8 +1094,8 @@ void Plugin::ComputeAndRenderClosestApproaches(
   DiscreteTrajectory<Barycentric> periapsides_trajectory;
   ComputeApsides(*renderer_->GetTargetVessel().prediction(),
                  trajectory,
-                 begin,
-                 end,
+                 begin, end,
+                 /*t_max=*/InfiniteFuture,
                  max_points,
                  apoapsides_trajectory,
                  periapsides_trajectory);
@@ -1041,10 +1111,11 @@ void Plugin::ComputeAndRenderClosestApproaches(
 void Plugin::ComputeAndRenderNodes(
     DiscreteTrajectory<Barycentric>::iterator const& begin,
     DiscreteTrajectory<Barycentric>::iterator const& end,
+    Instant const& t_max,
     Position<World> const& sun_world_position,
     int const max_points,
-    DiscreteTrajectory<World>& ascending,
-    DiscreteTrajectory<World>& descending) const {
+    std::vector<Renderer::Node>& ascending,
+    std::vector<Renderer::Node>& descending) const {
   auto const trajectory_in_plotting =
       renderer_->RenderBarycentricTrajectoryInPlotting(begin, end);
 
@@ -1071,24 +1142,23 @@ void Plugin::ComputeAndRenderNodes(
   ComputeNodes(trajectory_in_plotting,
                trajectory_in_plotting.begin(),
                trajectory_in_plotting.end(),
+               t_max,
                Vector<double, Navigation>({0, 0, 1}),
                max_points,
                ascending_trajectory,
                descending_trajectory,
                show_node).IgnoreError();
 
-  ascending = renderer_->RenderPlottingTrajectoryInWorld(
-                  current_time_,
-                  ascending_trajectory.begin(),
-                  ascending_trajectory.end(),
-                  sun_world_position,
-                  PlanetariumRotation());
-  descending = renderer_->RenderPlottingTrajectoryInWorld(
-                   current_time_,
-                   descending_trajectory.begin(),
-                   descending_trajectory.end(),
-                   sun_world_position,
-                   PlanetariumRotation());
+  ascending = renderer_->RenderNodes(current_time_,
+                                     ascending_trajectory.begin(),
+                                     ascending_trajectory.end(),
+                                     sun_world_position,
+                                     PlanetariumRotation());
+  descending = renderer_->RenderNodes(current_time_,
+                                      descending_trajectory.begin(),
+                                      descending_trajectory.end(),
+                                      sun_world_position,
+                                      PlanetariumRotation());
 }
 
 bool Plugin::HasCelestial(Index const index) const {
@@ -1181,13 +1251,22 @@ Plugin::NewBodySurfaceNavigationFrame(
 }
 
 not_null<std::unique_ptr<PlottingFrame>>
-Plugin::NewRotatingPulsatingPlottingFrame(Index const primary_index,
-                                          Index const secondary_index) const {
-  Celestial const& primary = *FindOrDie(celestials_, primary_index);
-  Celestial const& secondary = *FindOrDie(celestials_, secondary_index);
+Plugin::NewRotatingPulsatingPlottingFrame(
+    std::vector<Index> const& primary_indices,
+    std::vector<Index> const& secondary_indices) const {
+  std::vector<not_null<MassiveBody const*>> primaries;
+  for (Index const i : primary_indices) {
+    Celestial const& primary = *FindOrDie(celestials_, i);
+    primaries.push_back(primary.body());
+  }
+  std::vector<not_null<MassiveBody const*>> secondaries;
+  for (Index const i : secondary_indices) {
+    Celestial const& secondary = *FindOrDie(celestials_, i);
+    secondaries.push_back(secondary.body());
+  }
   return make_not_null_unique<
       RotatingPulsatingReferenceFrame<Barycentric, Navigation>>(
-      ephemeris_.get(), primary.body(), secondary.body());
+      ephemeris_.get(), std::move(primaries), std::move(secondaries));
 }
 
 void Plugin::SetTargetVessel(GUID const& vessel_guid,
@@ -1362,6 +1441,16 @@ Renderer const& Plugin::renderer() const {
   return *renderer_;
 }
 
+GeometricPotentialPlotter& Plugin::geometric_potential_plotter() {
+  CHECK(!initializing_);
+  return *geometric_potential_plotter_;
+}
+
+GeometricPotentialPlotter const& Plugin::geometric_potential_plotter() const {
+  CHECK(!initializing_);
+  return *geometric_potential_plotter_;
+}
+
 void Plugin::WriteToMessage(
     not_null<serialization::Plugin*> const message) const {
   LOG(INFO) << __FUNCTION__;
@@ -1421,7 +1510,7 @@ void Plugin::WriteToMessage(
 
   ephemeris_->WriteToMessage(message->mutable_ephemeris());
 
-  // |history_downsampling_parameters_| is not persisted.
+  // `history_downsampling_parameters_` is not persisted.
   history_fixed_step_parameters_.WriteToMessage(
       message->mutable_history_parameters());
   psychohistory_parameters_.WriteToMessage(
@@ -1543,6 +1632,8 @@ not_null<std::unique_ptr<Plugin>> Plugin::ReadFromMessage(
                                                   plugin->ephemeris_.get());
   }
 
+  plugin->geometric_potential_plotter_.emplace(plugin->ephemeris_.get());
+
   // Note that for proper deserialization of parts this list must be
   // reconstructed in its original order.
   auto const part_id_to_part =
@@ -1636,8 +1727,8 @@ Velocity<World> Plugin::VesselVelocity(
   DegreesOfFreedom<Navigation> const plotting_frame_degrees_of_freedom =
       renderer_->BarycentricToPlotting(time)(degrees_of_freedom);
   // Note that in the rotating-pulsating reference frame, this value is given in
-  // current metres per second (that is, in metres at |time| per second, for a
-  // velocity at |time|).
+  // current metres per second (that is, in metres at `time` per second, for a
+  // velocity at `time`).
   return renderer_->PlottingToWorld(time, PlanetariumRotation())(
       plotting_frame_degrees_of_freedom.velocity());
 }
@@ -1685,10 +1776,11 @@ void Plugin::AddPart(not_null<Vessel*> const vessel,
                      PartId const part_id,
                      std::string const& name,
                      Args... args) {
-  auto const [it, inserted] = part_id_to_vessel_.emplace(part_id, vessel);
+  auto const [_, inserted] = part_id_to_vessel_.emplace(part_id, vessel);
   CHECK(inserted) << NAMED(part_id);
-  auto deletion_callback = [it = it, &map = part_id_to_vessel_] {
-    map.erase(it);
+  auto deletion_callback = [part_id, &map = part_id_to_vessel_] {
+    // This entails a lookup, but iterators are not stable in `flat_hash_map`.
+    map.erase(part_id);
   };
   auto part = make_not_null_unique<Part>(part_id,
                                          name,

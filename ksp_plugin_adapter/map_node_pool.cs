@@ -39,17 +39,29 @@ internal class MapNodePool {
                                             type == other.type;
   }
 
+  public readonly struct VisibilityModifiers {
+    public readonly bool show_unpinned;
+    public readonly bool can_hover;
+
+    public VisibilityModifiers(bool show_unpinned, bool can_hover) {
+      this.show_unpinned = show_unpinned;
+      this.can_hover = can_hover;
+    }
+}
+
   public class SingleProvenancePool {
     public int nodes_used;
     public List<KSP.UI.Screens.Mapview.MapNode> nodes =
         new List<KSP.UI.Screens.Mapview.MapNode>(MaxNodesPerProvenance);
   }
 
-  public MapNodePool(Func<bool> show_only_pinned) {
+  public MapNodePool(PrincipiaPluginAdapter adapter,
+                     Func<VisibilityModifiers> visibility_modifiers) {
+    adapter_ = adapter;
     nodes_ = new Dictionary<Provenance, SingleProvenancePool>();
     properties_ =
         new Dictionary<KSP.UI.Screens.Mapview.MapNode, MapNodeProperties>();
-    show_only_pinned_ = show_only_pinned;
+    visibility_modifiers_ = visibility_modifiers;
   }
 
   public void Clear() {
@@ -93,15 +105,77 @@ internal class MapNodePool {
   }
 
   public void RenderMarkers(
-      DisposableIterator apsis_iterator,
+      IEnumerable<TQP> markers,
       Provenance provenance,
       ReferenceFrameSelector<PlottingFrameParameters> reference_frame) {
+    PrepareToRenderMarkers(provenance,
+                           reference_frame,
+                           out UnityEngine.Color colour,
+                           out MapObject associated_map_object);
+
+    var pool = nodes_[provenance];
+    foreach (TQP marker in markers) {
+      MapNodeProperties node_properties = new MapNodeProperties {
+          visible = true,
+          object_type = provenance.type,
+          colour = colour,
+          reference_frame = reference_frame,
+          payload = new LegacyMapNodePayload {
+              time = marker.t,
+              world_position = (Vector3d)marker.qp.q,
+              velocity = (Vector3d)marker.qp.p
+          },
+          source = provenance.source,
+          associated_map_object = associated_map_object,
+      };
+
+      if (pool.nodes_used == pool.nodes.Count) {
+        pool.nodes.Add(MakePoolNode());
+      }
+      properties_[pool.nodes[pool.nodes_used++]] = node_properties;
+    }
+  }
+
+  public void RenderNodes(
+      IEnumerable<Node> markers,
+      Provenance provenance,
+      ReferenceFrameSelector<PlottingFrameParameters> reference_frame) {
+    PrepareToRenderMarkers(provenance,
+                           reference_frame,
+                           out UnityEngine.Color colour,
+                           out MapObject associated_map_object);
+
+    var pool = nodes_[provenance];
+    foreach (Node marker in markers) {
+      MapNodeProperties node_properties = new MapNodeProperties {
+          visible = true,
+          object_type = provenance.type,
+          colour = colour,
+          reference_frame = reference_frame,
+          payload = new NodeMapNodePayload {
+              time = marker.time,
+              world_position = (Vector3d)marker.world_position,
+              node = marker
+          },
+          source = provenance.source,
+          associated_map_object = associated_map_object,
+      };
+
+      if (pool.nodes_used == pool.nodes.Count) {
+        pool.nodes.Add(MakePoolNode());
+      }
+      properties_[pool.nodes[pool.nodes_used++]] = node_properties;
+    }
+  }
+
+  private void PrepareToRenderMarkers(
+      Provenance provenance,
+      ReferenceFrameSelector<PlottingFrameParameters> reference_frame,
+      out UnityEngine.Color colour,
+      out MapObject associated_map_object) {
     if (!nodes_.ContainsKey(provenance)) {
       nodes_.Add(provenance, new SingleProvenancePool());
     }
-    var pool = nodes_[provenance];
-    MapObject associated_map_object;
-    UnityEngine.Color colour;
     switch (provenance.type) {
       case MapObject.ObjectType.Apoapsis:
       case MapObject.ObjectType.Periapsis:
@@ -123,7 +197,7 @@ internal class MapNodePool {
           // a vessel).
           // The nodes are with respect to the orbit of the secondary around the
           // primary. We show the nodes with the colour of the primary.
-          CelestialBody primary = reference_frame.OrientingBody();
+          CelestialBody primary = reference_frame.Primary();
           associated_map_object = primary.MapObject;
           colour = primary.orbit == null
                         ? XKCDColors.SunshineYellow
@@ -138,38 +212,14 @@ internal class MapNodePool {
           colour = XKCDColors.Chartreuse;
         }
         break;
+      case MapObject.ObjectType.PatchTransition:
+        associated_map_object = reference_frame.Centre().MapObject;
+        colour = XKCDColors.Orange;
+        break;
       default:
         throw Log.Fatal($"Unexpected type {provenance.type}");
     }
     colour.a = 1;
-
-    for (int i = 0;
-         i < MaxNodesPerProvenance && !apsis_iterator.IteratorAtEnd();
-         ++i, apsis_iterator.IteratorIncrement()) {
-      QP apsis = apsis_iterator.IteratorGetDiscreteTrajectoryQP();
-      MapNodeProperties node_properties = new MapNodeProperties {
-          visible = true,
-          object_type = provenance.type,
-          colour = colour,
-          reference_frame = reference_frame,
-          world_position = (Vector3d)apsis.q,
-          velocity = (Vector3d)apsis.p,
-          source = provenance.source,
-          time = apsis_iterator.IteratorGetDiscreteTrajectoryTime(),
-          associated_map_object = associated_map_object,
-      };
-      if (provenance.type == MapObject.ObjectType.Periapsis &&
-          reference_frame.Centre().GetAltitude(
-              node_properties.world_position) < 0) {
-        node_properties.object_type = MapObject.ObjectType.PatchTransition;
-        node_properties.colour = XKCDColors.Orange;
-      }
-
-      if (pool.nodes_used == pool.nodes.Count) {
-        pool.nodes.Add(MakePoolNode());
-      }
-      properties_[pool.nodes[pool.nodes_used++]] = node_properties;
-    }
   }
 
   private KSP.UI.Screens.Mapview.MapNode MakePoolNode() {
@@ -195,9 +245,17 @@ internal class MapNodePool {
     new_node.OnUpdateVisible += (KSP.UI.Screens.Mapview.MapNode node,
                                  KSP.UI.Screens.Mapview.MapNode.IconData
                                      icon) => {
+      var visibility = visibility_modifiers_();
       icon.visible = properties_[node].visible &&
-                     (!show_only_pinned_() || node.Pinned);
+                     (visibility.show_unpinned || node.Pinned);
       icon.color = properties_[node].colour;
+      node.Interactable = visibility.can_hover;
+      // If the node shouldn't be interactable, then it cannot be actively
+      // hovered. So, force remove the existing active hover state.
+      // This is the same call used by the stock code.
+      if (!node.Interactable && node.Hover) {
+        node.OnPointerExit(null);
+      }
     };
     new_node.OnUpdateType += (KSP.UI.Screens.Mapview.MapNode node,
                               KSP.UI.Screens.Mapview.MapNode.TypeData type) => {
@@ -232,9 +290,10 @@ internal class MapNodePool {
       switch (properties.object_type) {
         case MapObject.ObjectType.Periapsis:
         case MapObject.ObjectType.Apoapsis: {
+          var payload = properties.payload as LegacyMapNodePayload;
           CelestialBody celestial = properties.reference_frame.Centre();
-          Vector3d position = properties.world_position;
-          double speed = properties.velocity.magnitude;
+          Vector3d position = payload.world_position;
+          double speed = payload.velocity.magnitude;
           caption.Header = L10N.CelestialString(
               properties.object_type == MapObject.ObjectType.Periapsis
                   ? "#Principia_MapNode_PeriapsisHeader"
@@ -258,16 +317,25 @@ internal class MapNodePool {
                                             source,
                                             node_name,
                                             plane);
-          caption.captionLine2 = L10N.CacheFormat(
-              "#Principia_MapNode_NodeCaptionLine2",
-              properties.velocity.z.FormatN(0));
+          var payload = properties.payload as NodeMapNodePayload;
+          if (properties.reference_frame.Centre() == null) {
+            caption.captionLine2 = L10N.CacheFormat(
+                "#Principia_MapNode_NodeCaptionLine2WithoutAngle",
+                payload.node.out_of_plane_velocity.FormatN(0));
+          } else {
+            caption.captionLine2 = L10N.CacheFormat(
+                "#Principia_MapNode_NodeCaptionLine2WithAngle",
+                payload.node.out_of_plane_velocity.FormatN(0),
+                payload.node.apparent_inclination_in_degrees.FormatN(0));
+          }
           break;
         }
         case MapObject.ObjectType.ApproachIntersect: {
-          double separation = 
+          var payload = properties.payload as LegacyMapNodePayload;
+          double separation =
               (properties.reference_frame.target.GetWorldPos3D() -
-               properties.world_position).magnitude;
-          double speed = properties.velocity.magnitude;
+               payload.world_position).magnitude;
+          double speed = payload.velocity.magnitude;
           caption.Header = L10N.CacheFormat("#Principia_MapNode_ApproachHeader",
                                             source,
                                             separation.FormatN(0));
@@ -277,21 +345,28 @@ internal class MapNodePool {
           break;
         }
         case MapObject.ObjectType.PatchTransition: {
+          var payload = properties.payload as LegacyMapNodePayload;
           CelestialBody celestial = properties.reference_frame.Centre();
-          caption.Header = L10N.CacheFormat("#Principia_MapNode_ImpactHeader",
-                                            source,
-                                            celestial.Name());
+          Vector3d position = payload.world_position;
+          double speed = payload.velocity.magnitude;
+          caption.Header = L10N.CelestialString(
+              "#Principia_MapNode_ImpactHeader",
+              new[]{ celestial },
+              source,
+              celestial.GetAltitude(position).FormatN(0));
           caption.captionLine1 = "";
-          caption.captionLine2 = "";
+          caption.captionLine2 = L10N.CacheFormat(
+              "#Principia_MapNode_ImpactCaptionLine2",
+              speed.FormatN(0));
           break;
         }
       }
-      if (properties.object_type != MapObject.ObjectType.PatchTransition) {
-        caption.captionLine1 =
-            "T" + new PrincipiaTimeSpan(
-                    Planetarium.GetUniversalTime() - properties.time).
-                Format(with_leading_zeroes: false, with_seconds: true);
-      }
+      caption.captionLine1 = "T" +
+                             new PrincipiaTimeSpan(
+                                     Planetarium.GetUniversalTime() -
+                                     properties.payload.time).
+                                 Format(with_leading_zeroes: false,
+                                        with_seconds: true);
       // The font used by map nodes does not support the minus sign, so we
       // fall back to the hyphen-minus.
       string minus = Culture.culture.NumberFormat.NegativeSign;
@@ -301,29 +376,46 @@ internal class MapNodePool {
       caption.captionLine3 = caption.captionLine3?.Replace(minus, "-");
     };
     new_node.OnUpdatePosition += (KSP.UI.Screens.Mapview.MapNode node) =>
-        ScaledSpace.LocalToScaledSpace(properties_[node].world_position);
+        ScaledSpace.LocalToScaledSpace(
+            properties_[node].payload.world_position);
     return new_node;
+  }
+
+  // The payload is computed by the C++ side.
+  private abstract class MapNodePayload {
+    public double time;
+    public Vector3d world_position;
+  }
+
+  // TODO(phl): Move away from legacy payloads.
+  private class LegacyMapNodePayload : MapNodePayload {
+    // Velocity in the plotting frame.  Note that the handedness is
+    // inconsistent with World; for practical purposes only the norm or
+    // individual coordinates of this vector should be used here.
+    public Vector3d velocity;
+  }
+
+  private class NodeMapNodePayload : MapNodePayload {
+    public Node node;
   }
 
   private class MapNodeProperties {
     public bool visible;
     public MapObject.ObjectType object_type;
-    public Vector3d world_position;
-    // Velocity in the plotting frame.  Note that the handedness is
-    // inconsistent with World; for practical purposes only the norm or
-    // individual coordinates of this vector should be used here.
-    public Vector3d velocity;
+    public MapNodePayload payload;
     public UnityEngine.Color colour;
     public MapObject associated_map_object;
     public ReferenceFrameSelector<PlottingFrameParameters> reference_frame;
     public NodeSource source;
-    public double time;
   }
 
+  private IntPtr Plugin => adapter_.Plugin();
+
+  private readonly PrincipiaPluginAdapter adapter_;
   private Dictionary<Provenance, SingleProvenancePool> nodes_;
   private Dictionary<KSP.UI.Screens.Mapview.MapNode, MapNodeProperties>
       properties_;
-  private Func<bool> show_only_pinned_;
+  private Func<VisibilityModifiers> visibility_modifiers_;
 }
 
 }  // namespace ksp_plugin_adapter

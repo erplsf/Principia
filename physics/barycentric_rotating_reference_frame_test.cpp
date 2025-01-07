@@ -7,21 +7,24 @@
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
-#include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "integrators/methods.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/ephemeris.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/rigid_reference_frame.hpp"
 #include "physics/solar_system.hpp"
-#include "quantities/constants.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
 #include "serialization/physics.pb.h"
 #include "testing_utilities/almost_equals.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -91,11 +94,9 @@ class BarycentricRotatingReferenceFrameTest : public ::testing::Test {
         small_initial_state_(solar_system_.degrees_of_freedom(small)),
         small_gravitational_parameter_(
             solar_system_.gravitational_parameter(small)),
-        centre_of_mass_initial_state_(
-            Barycentre<DegreesOfFreedom<ICRS>, GravitationalParameter>(
-                {big_initial_state_, small_initial_state_},
-                {big_gravitational_parameter_,
-                 small_gravitational_parameter_})) {
+        centre_of_mass_initial_state_(Barycentre(
+            {big_initial_state_, small_initial_state_},
+            {big_gravitational_parameter_, small_gravitational_parameter_})) {
     EXPECT_OK(ephemeris_->Prolong(t0_ + 2 * period_));
     big_small_frame_ = std::make_unique<
         BarycentricRotatingReferenceFrame<ICRS, BigSmallFrame>>(
@@ -212,10 +213,10 @@ TEST_F(BarycentricRotatingReferenceFrameTest, Serialization) {
       serialization::BarycentricRotatingReferenceFrame::extension));
   auto const extension = message.GetExtension(
       serialization::BarycentricRotatingReferenceFrame::extension);
-  EXPECT_TRUE(extension.has_primary());
-  EXPECT_TRUE(extension.has_secondary());
-  EXPECT_EQ(0, extension.primary());
-  EXPECT_EQ(1, extension.secondary());
+  EXPECT_EQ(1, extension.primary().size());
+  EXPECT_EQ(1, extension.secondary().size());
+  EXPECT_EQ(0, extension.primary()[0]);
+  EXPECT_EQ(1, extension.secondary()[0]);
 
   auto const read_big_small_frame =
       RigidReferenceFrame<ICRS, BigSmallFrame>::ReadFromMessage(

@@ -3,7 +3,7 @@
 #include <immintrin.h>
 
 #include "base/cpuid.hpp"
-#include "base/macros.hpp"
+#include "base/macros.hpp"  // 🧙 For PRINCIPIA_USE_FMA_IF_AVAILABLE.
 
 namespace principia {
 namespace numerics {
@@ -19,14 +19,29 @@ constexpr bool CanEmitFMAInstructions = true;
 constexpr bool CanEmitFMAInstructions = false;
 #endif
 
-// The functions in this file unconditionally wrap the appropriate intrinsics.
-// The caller may only use them if |UseHardwareFMA| is true.
-#if PRINCIPIA_USE_FMA_IF_AVAILABLE
+#if PRINCIPIA_USE_FMA_IF_AVAILABLE()
 inline bool const UseHardwareFMA =
-    CanEmitFMAInstructions && HasCPUFeatures(CPUFeatureFlags::FMA);
+    (CanEmitFMAInstructions && CPUIDFeatureFlag::FMA.IsSet());
 #else
 inline bool const UseHardwareFMA = false;
 #endif
+
+// The policy used for emitting FMA instructions.  This type is not used by this
+// file, but is declared here for the convenience of the clients.  The intended
+// semantics are:
+// * `Auto`: FMA is used if supported by the processor, the decision must be
+//   made dynamically by calling `UseHardwareFMA`.
+// * `Disallow`: FMA is never used.
+// * `Force`: FMA is always used.  The caller is expected to determine upstream
+//   if FMA is supported by the processor by calling `UseHardwareFMA`.
+enum class FMAPolicy {
+  Auto = 0,
+  Disallow = 1,
+  Force = 2,
+};
+
+// The functions in this file unconditionally wrap the appropriate intrinsics.
+// The caller may only use them if `UseHardwareFMA` is true.
 
 // ⟦ab + c⟧.
 inline double FusedMultiplyAdd(double a, double b, double c);
@@ -43,6 +58,7 @@ inline double FusedNegatedMultiplySubtract(double a, double b, double c);
 }  // namespace internal
 
 using internal::CanEmitFMAInstructions;
+using internal::FMAPolicy;
 using internal::FusedMultiplyAdd;
 using internal::FusedMultiplySubtract;
 using internal::FusedNegatedMultiplyAdd;

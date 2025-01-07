@@ -4,13 +4,14 @@
 #include "geometry/grassmann.hpp"
 #include "geometry/homothecy.hpp"
 #include "geometry/orthogonal_map.hpp"
-#include "geometry/space_transformations.hpp"
 #include "geometry/rotation.hpp"
 #include "geometry/sign.hpp"
 #include "geometry/signature.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "gtest/gtest.h"
 #include "physics/rigid_motion.hpp"
+#include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
@@ -24,11 +25,11 @@ using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_homothecy;
 using namespace principia::geometry::_orthogonal_map;
-using namespace principia::geometry::_space_transformations;
 using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_sign;
 using namespace principia::geometry::_signature;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_rigid_motion;
 using namespace principia::physics::_similar_motion;
 using namespace principia::quantities::_elementary_functions;

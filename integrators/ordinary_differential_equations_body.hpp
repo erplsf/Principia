@@ -4,24 +4,12 @@
 
 #include <vector>
 
-#include "base/for_all_of.hpp"
+#include "base/for_all_of.hpp"  // 🧙 For for_all_of.
 
 namespace principia {
 namespace integrators {
 namespace _ordinary_differential_equations {
 namespace internal {
-namespace termination_condition {
-
-inline void UpdateWithAbort(absl::Status const& updater,
-                            absl::Status& updated) {
-  if (absl::IsAborted(updater)) {
-    updated = updater;
-  } else {
-    updated.Update(updater);
-  }
-}
-
-}  // namespace termination_condition
 
 template<typename IndependentVariable_, typename... DependentVariable>
 ExplicitFirstOrderOrdinaryDifferentialEquation<IndependentVariable_,

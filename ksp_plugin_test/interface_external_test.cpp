@@ -1,11 +1,19 @@
 #include "ksp_plugin/interface.hpp"
 
 #include <string>
+#include <utility>
 
+#include "astronomy/frames.hpp"
+#include "base/not_null.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "ksp_plugin/frames.hpp"
+#include "ksp_plugin/identification.hpp"
+#include "ksp_plugin/vessel.hpp"
 #include "ksp_plugin_test/fake_plugin.hpp"
-#include "physics/kepler_orbit.hpp"
+#include "physics/solar_system.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/componentwise.hpp"
 #include "testing_utilities/is_near.hpp"
@@ -21,10 +29,10 @@ using ::testing::Gt;
 using ::testing::Lt;
 using namespace principia::astronomy::_frames;
 using namespace principia::base::_not_null;
-using namespace principia::ksp_plugin::_fake_plugin;
 using namespace principia::ksp_plugin::_frames;
 using namespace principia::ksp_plugin::_identification;
 using namespace principia::ksp_plugin::_vessel;
+using namespace principia::ksp_plugin_test::_fake_plugin;
 using namespace principia::physics::_solar_system;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_si;

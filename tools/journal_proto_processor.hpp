@@ -42,6 +42,16 @@ class JournalProtoProcessor final {
   std::vector<std::string> GetCxxPlayStatements() const;
 
  private:
+  void ProcessRepeatedNonStringField(FieldDescriptor const* descriptor,
+                                     std::string const& cs_boxed_type,
+                                     std::string const& cs_unboxed_type,
+                                     std::string const& cxx_type);
+  void ProcessRepeatedScalarField(FieldDescriptor const* descriptor,
+                                  std::string const& cxx_type);
+  void ProcessRepeatedDoubleField(FieldDescriptor const* descriptor);
+  void ProcessRepeatedInt32Field(FieldDescriptor const* descriptor);
+  void ProcessRepeatedInt64Field(FieldDescriptor const* descriptor);
+  void ProcessRepeatedUint32Field(FieldDescriptor const* descriptor);
   void ProcessRepeatedMessageField(FieldDescriptor const* descriptor);
   void ProcessRepeatedStringField(FieldDescriptor const* descriptor);
 
@@ -53,6 +63,8 @@ class JournalProtoProcessor final {
                                   std::string const& cxx_type);
   void ProcessOptionalDoubleField(FieldDescriptor const* descriptor);
   void ProcessOptionalInt32Field(FieldDescriptor const* descriptor);
+  void ProcessOptionalInt64Field(FieldDescriptor const* descriptor);
+  void ProcessOptionalUint32Field(FieldDescriptor const* descriptor);
   void ProcessOptionalMessageField(FieldDescriptor const* descriptor);
 
   void ProcessRequiredFixed32Field(FieldDescriptor const* descriptor);
@@ -96,8 +108,8 @@ class JournalProtoProcessor final {
   // structure.
   // We use cxx to designate C++ code and cs to designate C# code.
 
-  // The fields that are in.  Note that the out fields present in |in_out_| are
-  // not in |in_|.
+  // The fields that are in.  Note that the out fields present in `in_out_` are
+  // not in `in_`.
   std::set<FieldDescriptor const*> in_;
 
   // The fields that are in-out, i.e. for which fields of the same name exist in
@@ -108,7 +120,7 @@ class JournalProtoProcessor final {
 
   // The fields that are out.  Those fields are transmitted through the
   // interface with an extra level of indirection.  Note that the in fields
-  // present in |in_out_| are not in |out_|.
+  // present in `in_out_` are not in `out_`.
   std::set<FieldDescriptor const*> out_;
 
   // The fields that are returned.
@@ -139,12 +151,12 @@ class JournalProtoProcessor final {
                              std::string const& identifier)>>
       field_cxx_arguments_fn_;
 
-  // For all fields, a lambda that takes a serialized expression |expr| and a
-  // protocol buffer denoted by |prefix| and returns a statement to assign
-  // |expr| to the proper field of |prefix|.  |prefix| must be suitable as a
+  // For all fields, a lambda that takes a serialized expression `expr` and a
+  // protocol buffer denoted by `prefix` and returns a statement to assign
+  // `expr` to the proper field of `prefix`.  `prefix` must be suitable as a
   // prefix of a call, i.e., it must be a pointer followed by "->" or a
-  // reference followed by ".".  The lambda calls |field_cxx_serializer_fn_| to
-  // serialize expressions as necessary; thus, |expr| must *not* be serialized.
+  // reference followed by ".".  The lambda calls `field_cxx_serializer_fn_` to
+  // serialize expressions as necessary; thus, `expr` must *not* be serialized.
   std::map<FieldDescriptor const*,
            std::function<std::string(std::string const& prefix,
                                      std::string const& expr)>>
@@ -152,16 +164,16 @@ class JournalProtoProcessor final {
 
   // For fields that have an (is_consumed) or (is_consumed_if) option, a lambda
   // producing a statement to call Delete() to remove the appropriate entry from
-  // the pointer_map.  |expr| is a uint64 expression for the entry to be
-  // removed (typically something like |message.in().bar()|).  No data for other
+  // the pointer_map.  `expr` is a uint64 expression for the entry to be
+  // removed (typically something like `message.in().bar()`).  No data for other
   // fields.
   std::map<FieldDescriptor const*,
            std::function<std::string(std::string const& expr)>>
       field_cxx_deleter_fn_;
 
   // For all fields, a lambda that takes an expression for reading a protobuf
-  // field (typically something like |message.in().bar()|) and returns an
-  // expression for the deserialized form of |expr| suitable for storing in a
+  // field (typically something like `message.in().bar()`) and returns an
+  // expression for the deserialized form of `expr` suitable for storing in a
   // local variable (typically a call to some Deserialize function, but other
   // transformations are possible).  Deals with arrays of pointers for repeated
   // fields.
@@ -180,8 +192,8 @@ class JournalProtoProcessor final {
 
   // For fields that have an (is_produced) or (is_produced_if) option, a lambda
   // producing a statement to call Insert() to enter the appropriate entry into
-  // the pointer_map.  |expr1| is an uint64 expression for the serialized value
-  // of the pointer (typically something like |message.in().bar()|), |expr2| is
+  // the pointer_map.  `expr1` is an uint64 expression for the serialized value
+  // of the pointer (typically something like `message.in().bar()`), `expr2` is
   // a pointer expression for the current value of the pointer (typically the
   // name of a local variable).  No data for other fields.
   std::map<FieldDescriptor const*,
@@ -190,28 +202,28 @@ class JournalProtoProcessor final {
       field_cxx_inserter_fn_;
 
   // For all fields, a lambda that takes a C# parameter type as stored in
-  // |field_cs_type_|, and adds a mode to it.
+  // `field_cs_type_`, and adds a mode to it.
   std::map<FieldDescriptor const*,
            std::function<std::string(std::string const& type)>>
       field_cs_mode_fn_;
   // For all fields, a lambda that takes a C++ parameter or member type as
-  // stored in |field_cxx_type_|, and adds a mode to it.
+  // stored in `field_cxx_type_`, and adds a mode to it.
   std::map<FieldDescriptor const*,
            std::function<std::string(std::string const& type)>>
       field_cxx_mode_fn_;
 
   // For all fields, a lambda that takes a pointer expression and a statement
-  // generated by |field_cxx_assignment_fn_|.  If the field is optional, returns
-  // an if statement that only executes |stmt| if |expr| in nonnull.
+  // generated by `field_cxx_assignment_fn_`.  If the field is optional, returns
+  // an if statement that only executes `stmt` if `expr` in nonnull.
   std::map<FieldDescriptor const*,
            std::function<std::string(std::string const& expr,
                                      std::string const& stmt)>>
       field_cxx_optional_assignment_fn_;
 
   // For all fields, a lambda that takes a condition to check for the presence
-  // of an optional field (typically something like |message.in().has_bar()|)
+  // of an optional field (typically something like `message.in().has_bar()`)
   // and a deserialized expression for reading the field (typically the result
-  // of |field_cxx_deserializer_fn_|) and returns a conditional expression for
+  // of `field_cxx_deserializer_fn_`) and returns a conditional expression for
   // either a pointer to the deserialized value or nullptr.
   std::map<FieldDescriptor const*,
            std::function<std::string(std::string const& condition,
@@ -243,6 +255,11 @@ class JournalProtoProcessor final {
   // most one is set for a given field.
   std::map<FieldDescriptor const*, std::string> field_cs_custom_marshaler_;
   std::map<FieldDescriptor const*, std::string> field_cs_predefined_marshaler_;
+
+  // The fields that must be marshalled by simply copying their fields.  This is
+  // useful for classes-within-classes when we don't need a level of
+  // indirection.
+  std::set<FieldDescriptor const*> field_cs_marshal_by_copy_;
 
   // The C# type for a field, suitable for use in a private member when the
   // actual data cannot be exposed directly (think bool).
@@ -282,12 +299,16 @@ class JournalProtoProcessor final {
   // The key is a descriptor for a Return message.
   std::map<Descriptor const*, std::string> cs_interface_return_marshal_;
 
+  // The interchange messages that are represented by a class (as opposed to a
+  // struct) in the C# code.
+  std::set<Descriptor const*> cs_interchange_classes_;
+
   // The C#/C++ definition of a type corresponding to an interchange message.
   // The key is a descriptor for an interchange message.
   std::map<Descriptor const*, std::string> cs_interchange_type_declaration_;
   std::map<Descriptor const*, std::string> cxx_interchange_type_declaration_;
 
-  // The name of the C# class that implements a custom marshaler for an
+  // The full name of the C# class that implements a custom marshaler for an
   // interchange message.
   std::map<Descriptor const*, std::string> cs_custom_marshaler_name_;
 

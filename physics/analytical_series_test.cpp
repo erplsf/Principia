@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <ctime>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -12,18 +13,13 @@
 #include "gtest/gtest.h"
 #include "integrators/methods.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
-#include "mathematica/logger.hpp"
-#include "numerics/apodization.hpp"
 #include "numerics/fast_fourier_transform.hpp"
-#include "numerics/frequency_analysis.hpp"
 #include "numerics/poisson_series.hpp"
 #include "numerics/polynomial_evaluators.hpp"
-#include "physics/ephemeris.hpp"
-#include "physics/solar_system.hpp"
 #include "quantities/astronomy.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
-#include "testing_utilities/approximate_quantity.hpp"
 
 #if PRINCIPIA_CONTINUOUS_TRAJECTORY_SUPPORTS_PIECEWISE_POISSON_SERIES
 

@@ -2,22 +2,38 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "astronomy/frames.hpp"
 #include "astronomy/time_scales.hpp"
+#include "base/not_null.hpp"
+#include "geometry/affine_map.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/identity.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/permutation.hpp"
+#include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "integrators/embedded_explicit_runge_kutta_nyström_integrator.hpp"
 #include "integrators/methods.hpp"
+#include "ksp_plugin/frames.hpp"
+#include "ksp_plugin/identification.hpp"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/ephemeris.hpp"
+#include "physics/kepler_orbit.hpp"
 #include "physics/massive_body.hpp"
+#include "physics/solar_system.hpp"
 #include "quantities/astronomy.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/numerics.hpp"
@@ -68,8 +84,8 @@ namespace {
 
 PartId const part_id = 789;
 GUID const vessel_guid = "123-456";
-std::string const part_name = "Picard's desk";
-std::string const vessel_name = "NCC-1701-D";
+char const part_name[] = "Picard's desk";
+char const vessel_name[] = "NCC-1701-D";
 
 }  // namespace
 
@@ -230,7 +246,7 @@ TEST_F(PluginIntegrationTest, BodyCentredNonrotatingNavigationIntegration) {
                                 SolarSystemFactory::Earth,
                                 /*loaded=*/false,
                                 inserted);
-    // We give the sun an arbitrary nonzero velocity in |World|.
+    // We give the sun an arbitrary nonzero velocity in `World`.
     Position<World> const sun_world_position =
         World::origin + Velocity<World>(
             { 0.1 * AstronomicalUnit / Hour,
@@ -340,7 +356,7 @@ TEST_F(PluginIntegrationTest, BarycentricRotatingNavigationIntegration) {
                               SolarSystemFactory::Earth,
                               /*loaded=*/false,
                               inserted);
-  // We give the sun an arbitrary nonzero velocity in |World|.
+  // We give the sun an arbitrary nonzero velocity in `World`.
   Position<World> const sun_world_position =
       World::origin + Velocity<World>(
           { 0.1 * AstronomicalUnit / Hour,
@@ -648,7 +664,7 @@ TEST_F(PluginIntegrationTest, PhysicsBubble) {
 
 // Checks that we correctly predict a full circular orbit around a massive body
 // with unit gravitational parameter at unit distance.  Since predictions are
-// only computed on |AdvanceTime()|, we advance time by a small amount.
+// only computed on `AdvanceTime()`, we advance time by a small amount.
 TEST_F(PluginIntegrationTest, Prediction) {
   Index const celestial = 0;
   Plugin plugin("JD2451545.0", "JD2451545.0", 0 * Radian);

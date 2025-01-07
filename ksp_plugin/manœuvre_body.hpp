@@ -2,12 +2,11 @@
 
 #include "ksp_plugin/manœuvre.hpp"
 
-#include <cmath>
 #include <functional>
+#include <memory>
 
-#include "base/not_null.hpp"
 #include "physics/discrete_trajectory.hpp"
-#include "quantities/elementary_functions.hpp"
+#include "physics/rigid_motion.hpp"
 
 namespace principia {
 namespace ksp_plugin {
@@ -15,13 +14,8 @@ namespace _manœuvre {
 namespace internal {
 
 using std::placeholders::_1;
-using namespace principia::base::_not_null;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_rotation;
 using namespace principia::physics::_discrete_trajectory;
 using namespace principia::physics::_rigid_motion;
-using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
 
 template<typename InertialFrame, typename Frame>
 Manœuvre<InertialFrame, Frame>::Manœuvre(Mass const& initial_mass,
@@ -29,14 +23,14 @@ Manœuvre<InertialFrame, Frame>::Manœuvre(Mass const& initial_mass,
   : initial_mass_(initial_mass),
     construction_burn_(burn),
     burn_(burn) {
-  // Fill the missing fields of |intensity|.
+  // Fill the missing fields of `intensity`.
   auto& intensity = burn_.intensity;
   if (intensity.Δv) {
     CHECK(!intensity.direction && !intensity.duration);
     intensity.direction = NormalizeOrZero(*intensity.Δv);
     auto const speed = intensity.Δv->Norm();
     if (speed == Speed()) {
-      // This handles the case where |thrust_| vanishes, where the usual formula
+      // This handles the case where `thrust_` vanishes, where the usual formula
       // would yield NaN.
       intensity.duration = Time();
     } else {
@@ -51,7 +45,7 @@ Manœuvre<InertialFrame, Frame>::Manœuvre(Mass const& initial_mass,
                    std::log(initial_mass_ / final_mass());
   }
 
-  // Fill the missing fields of |timing|.
+  // Fill the missing fields of `timing`.
   auto& timing = burn_.timing;
   if (timing.initial_time) {
     CHECK(!timing.time_of_half_Δv);
@@ -171,9 +165,17 @@ bool Manœuvre<InertialFrame, Frame>::FitsBetween(Instant const& begin,
 }
 
 template<typename InertialFrame, typename Frame>
+void Manœuvre<InertialFrame, Frame>::clear_coasting_trajectory() {
+  initial_degrees_of_freedom_ = std::nullopt;
+}
+
+template<typename InertialFrame, typename Frame>
 void Manœuvre<InertialFrame, Frame>::set_coasting_trajectory(
     DiscreteTrajectorySegmentIterator<InertialFrame> const trajectory) {
-  coasting_trajectory_ = trajectory;
+  typename DiscreteTrajectory<InertialFrame>::iterator const it =
+      trajectory->find(initial_time());
+  CHECK(it != trajectory->end());
+  initial_degrees_of_freedom_ = it->degrees_of_freedom;
 }
 
 template<typename InertialFrame, typename Frame>
@@ -210,10 +212,9 @@ Manœuvre<InertialFrame, Frame>::FrenetIntrinsicAcceleration() const {
 template<typename InertialFrame, typename Frame>
 OrthogonalMap<Frenet<Frame>, InertialFrame>
     Manœuvre<InertialFrame, Frame>::FrenetFrame() const {
-  typename DiscreteTrajectory<InertialFrame>::iterator const it =
-      coasting_trajectory_->find(initial_time());
-  CHECK(it != coasting_trajectory_->end());
-  return ComputeFrenetFrame(initial_time(), it->degrees_of_freedom);
+  CHECK(initial_degrees_of_freedom_.has_value());
+  return ComputeFrenetFrame(initial_time(),
+                            initial_degrees_of_freedom_.value());
 }
 
 template<typename InertialFrame, typename Frame>

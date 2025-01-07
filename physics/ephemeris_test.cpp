@@ -1,18 +1,19 @@
 #include "physics/ephemeris.hpp"
 
 #include <limits>
-#include <map>
+#include <memory>
 #include <optional>
 #include <random>
 #include <set>
 #include <string>
-#include <thread>
+#include <utility>
 #include <vector>
 
 #include "astronomy/frames.hpp"
-#include "base/macros.hpp"
+#include "base/not_null.hpp"
 #include "geometry/barycentre_calculator.hpp"
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/r3x3_matrix.hpp"
 #include "geometry/space.hpp"
@@ -21,22 +22,25 @@
 #include "gtest/gtest.h"
 #include "integrators/embedded_explicit_generalized_runge_kutta_nyström_integrator.hpp"
 #include "integrators/embedded_explicit_runge_kutta_nyström_integrator.hpp"
+#include "integrators/integrators.hpp"
 #include "integrators/methods.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
 #include "mathematica/logger.hpp"
-#include "physics/integration_parameters.hpp"
-#include "physics/kepler_orbit.hpp"
+#include "mathematica/mathematica.hpp"
+#include "physics/continuous_trajectory.hpp"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/discrete_trajectory.hpp"
 #include "physics/massive_body.hpp"
+#include "physics/massless_body.hpp"
 #include "physics/oblate_body.hpp"
-#include "physics/rigid_motion.hpp"
-#include "physics/tensors.hpp"
+#include "physics/rotating_body.hpp"
+#include "physics/solar_system.hpp"
 #include "quantities/astronomy.hpp"
-#include "quantities/constants.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
-#include "serialization/geometry.pb.h"
 #include "serialization/physics.pb.h"
 #include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
@@ -45,7 +49,6 @@
 #include "testing_utilities/matchers.hpp"
 #include "testing_utilities/numerics.hpp"
 #include "testing_utilities/numerics_matchers.hpp"
-#include "testing_utilities/solar_system_factory.hpp"
 #include "testing_utilities/vanishes_before.hpp"
 
 namespace principia {
@@ -64,7 +67,6 @@ using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
 using namespace principia::geometry::_r3x3_matrix;
-using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_space;
 using namespace principia::integrators::_embedded_explicit_generalized_runge_kutta_nyström_integrator;  // NOLINT
 using namespace principia::integrators::_embedded_explicit_runge_kutta_nyström_integrator;  // NOLINT
@@ -83,7 +85,6 @@ using namespace principia::physics::_massless_body;
 using namespace principia::physics::_oblate_body;
 using namespace principia::physics::_rotating_body;
 using namespace principia::physics::_solar_system;
-using namespace principia::physics::_tensors;
 using namespace principia::quantities::_astronomy;
 using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_named_quantities;
@@ -96,7 +97,6 @@ using namespace principia::testing_utilities::_is_near;
 using namespace principia::testing_utilities::_matchers;
 using namespace principia::testing_utilities::_numerics;
 using namespace principia::testing_utilities::_numerics_matchers;
-using namespace principia::testing_utilities::_solar_system_factory;
 using namespace principia::testing_utilities::_vanishes_before;
 using namespace std::chrono_literals;
 
@@ -151,8 +151,7 @@ class EphemerisTest : public testing::TestWithParam<FixedStepSizeIntegrator<
     period = 2 * π *
              Sqrt(Pow<3>(semi_major_axis) / (earth->gravitational_parameter() +
                                              moon->gravitational_parameter()));
-    centre_of_mass = Barycentre<Position<ICRS>, Mass>(
-        {q1, q2}, {earth->mass(), moon->mass()});
+    centre_of_mass = Barycentre({q1, q2}, {earth->mass(), moon->mass()});
     Velocity<ICRS> const v1({-2 * π * (q1 - centre_of_mass).Norm() / period,
                              0 * si::Unit<Speed>,
                              0 * si::Unit<Speed>});
@@ -199,8 +198,7 @@ TEST_P(EphemerisTest, ProlongSpecialCases) {
   EXPECT_OK(ephemeris.Prolong(t0_ + period / 2));
   EXPECT_EQ(t_max, ephemeris.t_max());
 
-  Instant const last_t =
-      Barycentre<Instant, double>({t0_ + period, t_max}, {0.5, 0.5});
+  Instant const last_t = Barycentre({t0_ + period, t_max});
   ephemeris.Prolong(last_t).IgnoreError();
   EXPECT_EQ(t_max, ephemeris.t_max());
 }
@@ -902,7 +900,7 @@ TEST_P(EphemerisTest, ComputeJacobianOnMassiveBody) {
   }
 }
 
-TEST_P(EphemerisTest, ComputeGravitationalJerkOnMassiveBody) {
+TEST_P(EphemerisTest, ComputeGravitationalJerkOnMasslessBody) {
   SolarSystem<ICRS> const solar_system_2000(
             SOLUTION_DIR / "astronomy" / "sol_gravity_model.proto.txt",
             SOLUTION_DIR / "astronomy" /
@@ -921,6 +919,81 @@ TEST_P(EphemerisTest, ComputeGravitationalJerkOnMassiveBody) {
 
   auto const earth = ephemeris->bodies()[solar_system_2000.index("Earth")];
   auto const earth_trajectory = ephemeris->trajectory(earth);
+  auto const earth_degrees_of_freedom =
+      earth_trajectory->EvaluateDegreesOfFreedom(j2000);
+
+  std::mt19937_64 random(42);
+  std::uniform_real_distribution<double> delay_distribution(1, 5);
+  std::uniform_real_distribution<double> length_distribution(-1e9, 1e9);
+  std::uniform_real_distribution<double> speed_distribution(-1e3, 1e3);
+  for (int i = 0; i < 10; ++i) {
+    Instant previous_t = j2000;
+    DiscreteTrajectory<ICRS> vessel_trajectory;
+    Displacement<ICRS> const displacement(
+        {length_distribution(random) * Metre,
+         length_distribution(random) * Metre,
+         length_distribution(random) * Metre});
+    Velocity<ICRS> const velocity(
+        {speed_distribution(random) * Metre / Second,
+         speed_distribution(random) * Metre / Second,
+         speed_distribution(random) * Metre / Second});
+    CHECK_OK(vessel_trajectory.Append(
+        previous_t,
+        earth_degrees_of_freedom +
+            RelativeDegreesOfFreedom<ICRS>(displacement, velocity)));
+    auto const instance = ephemeris->NewInstance(
+        {&vessel_trajectory},
+        Ephemeris<ICRS>::NoIntrinsicAccelerations,
+        Ephemeris<ICRS>::FixedStepParameters(
+            integrator(), 10 * Second));
+    for (Instant t = j2000 + 1 * Minute; t < j2000 + 100 * Minute;
+         t += delay_distribution(random) * Minute) {
+      CHECK_OK(ephemeris->Prolong(t));
+      CHECK_OK(ephemeris->FlowWithFixedStep(t + 10 * Minute, *instance));
+      auto const previous_acceleration =
+          ephemeris->ComputeGravitationalAccelerationOnMasslessBody(
+              vessel_trajectory.EvaluatePosition(previous_t), previous_t);
+      auto const acceleration =
+          ephemeris->ComputeGravitationalAccelerationOnMasslessBody(
+              vessel_trajectory.EvaluatePosition(t), t);
+      auto const finite_difference_jerk =
+          (acceleration - previous_acceleration) / (t - previous_t);
+      auto const actual_jerk =
+          ephemeris->ComputeGravitationalJerkOnMasslessBody(
+              vessel_trajectory.EvaluateDegreesOfFreedom(t), t);
+
+      EXPECT_THAT(
+          finite_difference_jerk,
+          Componentwise(RelativeErrorFrom(actual_jerk.coordinates().x,
+                                          AllOf(Gt(9.6e-7), Lt(1.9e-3))),
+                        RelativeErrorFrom(actual_jerk.coordinates().y,
+                                          AllOf(Gt(6.0e-6), Lt(2.2e-3))),
+                        RelativeErrorFrom(actual_jerk.coordinates().z,
+                                          AllOf(Gt(1.8e-6), Lt(4.3e-3)))));
+
+      previous_t = t;
+    }
+  }
+}
+
+TEST_P(EphemerisTest, ComputeGravitationalJerkOnMassiveBody) {
+  SolarSystem<ICRS> const solar_system_2000(
+            SOLUTION_DIR / "astronomy" / "sol_gravity_model.proto.txt",
+            SOLUTION_DIR / "astronomy" /
+                "sol_initial_state_jd_2451545_000000000.proto.txt");
+  Instant const j2000 = solar_system_2000.epoch();
+
+  auto ephemeris = solar_system_2000.MakeEphemeris(
+      /*accuracy_parameters=*/{/*fitting_tolerance-*/1 * Milli(Metre),
+                               /*geopotential_tolerance=*/0x1p-24},
+      Ephemeris<ICRS>::FixedStepParameters(
+          SymplecticRungeKuttaNyströmIntegrator<
+              McLachlanAtela1992Order4Optimal,
+              Ephemeris<ICRS>::NewtonianMotionEquation>(),
+          /*step=*/10 * Minute));
+  CHECK_OK(ephemeris->Prolong(j2000));
+
+  auto const earth = ephemeris->bodies()[solar_system_2000.index("Earth")];
 
   std::mt19937_64 random(42);
   std::uniform_real_distribution<double> delay_distribution(1, 5);

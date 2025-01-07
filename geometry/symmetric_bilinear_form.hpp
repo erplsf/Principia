@@ -2,23 +2,21 @@
 
 #include <string>
 
-#include "base/macros.hpp"
+#include "base/concepts.hpp"
 #include "base/not_null.hpp"
+#include "base/traits.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/r3x3_matrix.hpp"
+#include "geometry/rotation.hpp"
 #include "quantities/named_quantities.hpp"
 #include "serialization/geometry.pb.h"
 
 namespace principia {
 namespace geometry {
-
-FORWARD_DECLARE_FROM(rotation,
-                     TEMPLATE(typename FromFrame, typename ToFrame) class,
-                     Rotation);
-
 namespace _symmetric_bilinear_form {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_not_null;
 using namespace principia::base::_traits;
 using namespace principia::geometry::_grassmann;
@@ -26,8 +24,8 @@ using namespace principia::geometry::_r3x3_matrix;
 using namespace principia::geometry::_rotation;
 using namespace principia::quantities::_named_quantities;
 
-// A symmetric bilinear form with dimensionality |Scalar|, on the given kind of
-// |Multivector|, expressed in the coordinates of |Frame|.
+// A symmetric bilinear form with dimensionality `Scalar`, on the given kind of
+// `Multivector`, expressed in the coordinates of `Frame`.
 template<typename Scalar,
          typename Frame,
          template<typename, typename> typename Multivector>
@@ -36,6 +34,11 @@ class SymmetricBilinearForm {
   SymmetricBilinearForm() = default;
   explicit SymmetricBilinearForm(R3x3Matrix<Scalar> const& matrix);
   explicit SymmetricBilinearForm(R3x3Matrix<Scalar>&& matrix);
+
+  friend bool operator==(SymmetricBilinearForm const& left,
+                         SymmetricBilinearForm const& right) = default;
+  friend bool operator!=(SymmetricBilinearForm const& left,
+                         SymmetricBilinearForm const& right) = default;
 
   SymmetricBilinearForm& operator+=(SymmetricBilinearForm const& right);
   SymmetricBilinearForm& operator-=(SymmetricBilinearForm const& right);
@@ -49,19 +52,19 @@ class SymmetricBilinearForm {
       Multivector<LScalar, Frame> const& left,
       Multivector<RScalar, Frame> const& right) const;
 
-  // For a form on vectors, |Anticommutator| returns the form on bivectors
+  // For a form on vectors, `Anticommutator` returns the form on bivectors
   // resulting from the commutator, i.e., up to roundoff,
   //   F.Anticommutator() * α = Anticommutator(F, α),
   //   F.Anticommutator()(α, β) = InnerProduct(α, Anticommutator(F, β)).
   // Further, note that
   //   F.Anticommutator() * Wedge(v, w) = Wedge(F * v, w) + Wedge(v, F * w),
   // which is the generalization to nonsymmetric F.
-  // This operation is linear in |*this|.
+  // This operation is linear in `*this`.
   template<template<typename, typename> typename M = Multivector,
            typename = std::enable_if_t<is_same_template_v<M, Vector>>>
   SymmetricBilinearForm<Scalar, Frame, Bivector> Anticommutator() const;
 
-  // This function is the inverse of |Anticommutator()|.  It is well-defined
+  // This function is the inverse of `Anticommutator()`.  It is well-defined
   // only in dimension 3, where dim ⋀²V = dim V.
   template<template<typename, typename> typename M = Multivector,
            typename = std::enable_if_t<is_same_template_v<M, Bivector>>>
@@ -84,10 +87,9 @@ class SymmetricBilinearForm {
 
   void WriteToMessage(
       not_null<serialization::SymmetricBilinearForm*> message) const;
-  template<typename F = Frame,
-           typename = std::enable_if_t<is_serializable_v<F>>>
   static SymmetricBilinearForm ReadFromMessage(
-      serialization::SymmetricBilinearForm const& message);
+      serialization::SymmetricBilinearForm const& message)
+    requires serializable<Frame>;
 
  private:
   // All the operations on this class must ensure that this matrix remains
@@ -179,13 +181,6 @@ class SymmetricBilinearForm {
       Bivector<R, F> const& bivector);
 
   template<typename S, typename F, template<typename, typename> typename M>
-  friend bool operator==(SymmetricBilinearForm<S, F, M> const& left,
-                         SymmetricBilinearForm<S, F, M> const& right);
-  template<typename S, typename F, template<typename, typename> typename M>
-  friend bool operator!=(SymmetricBilinearForm<S, F, M> const& left,
-                         SymmetricBilinearForm<S, F, M> const& right);
-
-  template<typename S, typename F, template<typename, typename> typename M>
   friend std::string DebugString(SymmetricBilinearForm<S, F, M> const& form);
 
   template<typename S, typename F, template<typename, typename> typename M>
@@ -193,8 +188,8 @@ class SymmetricBilinearForm {
                                   SymmetricBilinearForm<S, F, M> const& form);
 };
 
-// |InnerProductForm()| is the symmetric bilinear form such that for all v and
-// w, |InnerProductForm()(v, w) == InnerProduct(v, w)|.
+// `InnerProductForm()` is the symmetric bilinear form such that for all v and
+// w, `InnerProductForm()(v, w) == InnerProduct(v, w)`.
 template<typename Frame, template<typename, typename> typename Multivector>
 SymmetricBilinearForm<double, Frame, Multivector> const& InnerProductForm();
 
@@ -245,10 +240,10 @@ SymmetricBilinearForm<Quotient<LScalar, RScalar>, Frame, Multivector> operator/(
     RScalar right);
 
 
-// NOTE(egg): An |operator*(SymmetricBilinearForm<L, F, M>, M<R, F>)| would fail
+// NOTE(egg): An `operator*(SymmetricBilinearForm<L, F, M>, M<R, F>)` would fail
 // to deduce M, for reasons that I do not quite understand (they seem to have to
 // do with Vector not being the same thing as Multivector).  Instead we have
-// this |enable_if| mess.
+// this `enable_if` mess.
 
 template<typename LScalar,
          typename RScalar,
@@ -274,8 +269,8 @@ Multivector<Product<LScalar, RScalar>, Frame, rank> operator*(
     Multivector<LScalar, Frame, rank> const& left,
     SymmetricBilinearForm<RScalar, Frame, M> const& right);
 
-// Solves the system |result * right == left|.  Note that by symmetry, this is
-// also the solution of |right * result == left|.
+// Solves the system `result * right == left`.  Note that by symmetry, this is
+// also the solution of `right * result == left`.
 template<typename LScalar,
          typename RScalar,
          typename Frame,
@@ -288,35 +283,24 @@ Multivector<Quotient<LScalar, RScalar>, Frame, rank> operator/(
     Multivector<LScalar, Frame, rank> const& left,
     SymmetricBilinearForm<RScalar, Frame, M> const& right);
 
-// |SymmetricProduct(v, w)| is v ⊙ w ≔ (v ⊗ w + w ⊗ v) / 2.
+// `SymmetricProduct(v, w)` is v ⊙ w ≔ (v ⊗ w + w ⊗ v) / 2.
 template<typename LScalar, typename RScalar, typename Frame>
 SymmetricBilinearForm<Product<LScalar, RScalar>, Frame, Vector>
 SymmetricProduct(Vector<LScalar, Frame> const& left,
                  Vector<RScalar, Frame> const& right);
 
-// |SymmetricSquare(v)| is |SymmetricProduct(v, v)|.
+// `SymmetricSquare(v)` is `SymmetricProduct(v, v)`.
 template<typename Scalar, typename Frame>
 SymmetricBilinearForm<Square<Scalar>, Frame, Vector>
 SymmetricSquare(Vector<Scalar, Frame> const& vector);
 
 // Symmetric bilinear forms on vectors act on bivectors through this function.
-// |Anticommutator(F, B)| is (tr(F)𝟙 - F)B in ℝ³ representation.  In matrix
+// `Anticommutator(F, B)` is (tr(F)𝟙 - F)B in ℝ³ representation.  In matrix
 // representation it is FB + BF = {F, B}.
 template<typename LScalar, typename RScalar, typename Frame>
 Bivector<Product<LScalar, RScalar>, Frame> Anticommutator(
     SymmetricBilinearForm<LScalar, Frame, Vector> const& form,
     Bivector<RScalar, Frame> const& bivector);
-
-template<typename Scalar,
-         typename Frame,
-         template<typename, typename> typename Multivector>
-bool operator==(SymmetricBilinearForm<Scalar, Frame, Multivector> const& left,
-                SymmetricBilinearForm<Scalar, Frame, Multivector> const& right);
-template<typename Scalar,
-         typename Frame,
-         template<typename, typename> typename Multivector>
-bool operator!=(SymmetricBilinearForm<Scalar, Frame, Multivector> const& left,
-                SymmetricBilinearForm<Scalar, Frame, Multivector> const& right);
 
 template<typename Scalar,
          typename Frame,

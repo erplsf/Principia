@@ -11,6 +11,7 @@
     <AssemblyName>principia.ksp_plugin_adapter</AssemblyName>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -129,6 +130,7 @@
     <Compile Include="logging.cs" />
     <Compile Include="lru_cache.cs" />
     <Compile Include="main_window.cs" />
+    <Compile Include="manœuvre_marker.cs" />
     <Compile Include="map_node_pool.cs" />
     <Compile Include="marshalers.generated.cs" />
     <Compile Include="ownership_transfer_marshaler.cs" />

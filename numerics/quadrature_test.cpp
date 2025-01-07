@@ -5,7 +5,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "quantities/elementary_functions.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
+#include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/numerics_matchers.hpp"
 
@@ -54,7 +57,7 @@ TEST_F(QuadratureTest, Sin) {
   EXPECT_THAT(GaussLegendre<10>(f, -2.0 * Radian, 5.0 * Radian),
               AlmostEquals(ʃf, 2495, 2498));
   EXPECT_THAT(GaussLegendre<11>(f, -2.0 * Radian, 5.0 * Radian),
-              AlmostEquals(ʃf, 20));
+              AlmostEquals(ʃf, 20, 21));
   EXPECT_THAT(GaussLegendre<12>(f, -2.0 * Radian, 5.0 * Radian),
               AlmostEquals(ʃf, 6, 7));
   EXPECT_THAT(GaussLegendre<13>(f, -2.0 * Radian, 5.0 * Radian),
@@ -97,7 +100,7 @@ TEST_F(QuadratureTest, Sin2) {
   EXPECT_THAT(GaussLegendre<9>(f, -2.0 * Radian, 5.0 * Radian),
               RelativeErrorFrom(ʃf, IsNear(8.5e-6_(1))));
   EXPECT_THAT(GaussLegendre<10>(f, -2.0 * Radian, 5.0 * Radian),
-              RelativeErrorFrom(ʃf, IsNear(2.9e-7_(1))));;
+              RelativeErrorFrom(ʃf, IsNear(2.9e-7_(1))));
   EXPECT_THAT(GaussLegendre<11>(f, -2.0 * Radian, 5.0 * Radian),
               RelativeErrorFrom(ʃf, IsNear(8.1e-9_(1))));
   EXPECT_THAT(GaussLegendre<12>(f, -2.0 * Radian, 5.0 * Radian),

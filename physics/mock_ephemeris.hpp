@@ -1,11 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "gmock/gmock.h"
-#include "integrators/mock_integrators.hpp"
-#include "physics/ephemeris.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "integrators/integrators.hpp"
+#include "integrators/mock_integrators.hpp"  // 🧙 For MockFixedStepSizeIntegrator.  // NOLINT
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 
 namespace principia {
 namespace physics {
@@ -43,7 +44,10 @@ class MockEphemeris : public Ephemeris<Frame> {
               (),
               (const, override));
 
-  MOCK_METHOD(absl::Status, Prolong, (Instant const& t), (override));
+  MOCK_METHOD(absl::Status,
+              Prolong,
+              (Instant const& t, std::int64_t max_ephemeris_steps),
+              (override));
   MOCK_METHOD(
       not_null<std::unique_ptr<
           typename Integrator<NewtonianMotionEquation>::Instance>>,
@@ -127,7 +131,7 @@ ACTION_P2(AppendToDiscreteTrajectory, time, degrees_of_freedom) {
 
 ACTION_P3(AppendToDiscreteTrajectory, trajectory, time, degrees_of_freedom) {
   // The extra level of indirection is useful for tests that get a pointer to a
-  // trajectory and squirrel it away using |SaveArg<N>|.
+  // trajectory and squirrel it away using `SaveArg<N>`.
   EXPECT_OK((*trajectory)->Append(time, degrees_of_freedom));
 }
 

@@ -5,14 +5,13 @@
 
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
-#include "geometry/space.hpp"
 #include "geometry/orthogonal_map.hpp"
 #include "geometry/permutation.hpp"
-#include "geometry/point.hpp"
 #include "geometry/rotation.hpp"
+#include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "quantities/numbers.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
 #include "testing_utilities/almost_equals.hpp"
@@ -104,12 +103,12 @@ TEST_F(AffineMapTest, Cube) {
               Eq(front_right_bottom_ - origin_));
   EXPECT_THAT(map(front_left_top_) - origin_,
               AlmostEquals(back_left_top_ - origin_, 1));
-  // Check that |map| is an isometry of the cube whose vertices are |vertices_|.
+  // Check that `map` is an isometry of the cube whose vertices are `vertices_`.
   for (auto const& point : vertices_) {
     EXPECT_THAT(originated_vertices_,
                 Contains(AlmostEquals(map(point) - origin_, 0, 1)));
   }
-  // Test that |map.Inverse() * map| acts as the identity on that cube.
+  // Test that `map.Inverse() * map` acts as the identity on that cube.
   for (std::size_t i = 0; i < vertices_.size(); ++i) {
     EXPECT_THAT(originated_vertices_[i],
                 AlmostEquals((map.Inverse() * map)

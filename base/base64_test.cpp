@@ -1,7 +1,9 @@
 #include "base/base64.hpp"
 
+#include <cstdint>
 #include <string>
 
+#include "base/array.hpp"
 #include "gtest/gtest.h"
 
 namespace principia {

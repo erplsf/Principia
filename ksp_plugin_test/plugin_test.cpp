@@ -13,29 +13,37 @@
 #include "absl/status/status.h"
 #include "astronomy/frames.hpp"
 #include "astronomy/time_scales.hpp"
-#include "base/macros.hpp"
+#include "base/map_util.hpp"
 #include "base/not_null.hpp"
 #include "base/serialization.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/identity.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/orthogonal_map.hpp"
 #include "geometry/permutation.hpp"
 #include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
+#include "geometry/space_transformations.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "integrators/integrators.hpp"
 #include "integrators/methods.hpp"
-#include "integrators/mock_integrators.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
-#include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
-#include "ksp_plugin/integrators.hpp"
+#include "ksp_plugin/frames.hpp"
+#include "ksp_plugin/identification.hpp"
 #include "physics/continuous_trajectory.hpp"
 #include "physics/degrees_of_freedom.hpp"
+#include "physics/ephemeris.hpp"
 #include "physics/kepler_orbit.hpp"
 #include "physics/massive_body.hpp"
-#include "physics/mock_rigid_reference_frame.hpp"
-#include "physics/mock_ephemeris.hpp"
+#include "physics/mock_ephemeris.hpp"  // 🧙 For MockEphemeris.
+#include "physics/rigid_motion.hpp"
+#include "physics/rigid_reference_frame.hpp"
+#include "physics/solar_system.hpp"
 #include "quantities/astronomy.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/almost_equals.hpp"
@@ -64,7 +72,6 @@ using ::testing::Lt;
 using ::testing::Ne;
 using ::testing::Ref;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::SaveArg;
 using ::testing::SetArgPointee;
 using ::testing::SizeIs;
@@ -82,6 +89,7 @@ using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_permutation;
 using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_space;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::integrators::_integrators;
 using namespace principia::integrators::_methods;
 using namespace principia::integrators::_ordinary_differential_equations;
@@ -138,8 +146,8 @@ class TestablePlugin : public Plugin {
                  std::string const& solar_system_epoch,
                  Angle const& planetarium_rotation)
       : Plugin(game_epoch, solar_system_epoch, planetarium_rotation),
-        // The |mock_ephemeris_| has to be created early so that we can write
-        // expectations before |EndInitialization| has been called.
+        // The `mock_ephemeris_` has to be created early so that we can write
+        // expectations before `EndInitialization` has been called.
         owned_mock_ephemeris_(
             std::make_unique<MockEphemeris<Barycentric>>()),
         mock_ephemeris_(owned_mock_ephemeris_.get()) {}
@@ -162,7 +170,7 @@ class TestablePlugin : public Plugin {
   }
 
   // We override this part of initialization in order to create a
-  // |MockEphemeris| rather than an |Ephemeris|.
+  // `MockEphemeris` rather than an `Ephemeris`.
   void EndInitialization() override {
     Plugin::EndInitialization();
     // Extend the continuous trajectories of the ephemeris.
@@ -173,14 +181,14 @@ class TestablePlugin : public Plugin {
               &*ephemeris_->trajectory(body));
       trajectories_.emplace(name_to_index_[body->name()], trajectory);
 
-      // Make sure that the |trajectory| member does the right thing.  Note that
+      // Make sure that the `trajectory` member does the right thing.  Note that
       // the implicit conversion doesn't work too well in the matcher.
       ON_CALL(*mock_ephemeris_, trajectory(body))
           .WillByDefault(Return(trajectory));
     }
 
     // Replace the ephemeris with our mock, but keep the real thing as it owns
-    // the bodies.  We squirelled away a pointer in |mock_ephemeris_|.
+    // the bodies.  We squirelled away a pointer in `mock_ephemeris_`.
     owned_real_ephemeris_ = std::move(ephemeris_);
     ephemeris_ = std::move(owned_mock_ephemeris_);
   }
@@ -240,8 +248,8 @@ class PluginTest : public testing::Test {
     }
   }
 
-  // The time of the |step|th history step of |plugin_|.  |HistoryTime(0)| is
-  // |initial_time_|.
+  // The time of the `step`th history step of `plugin_`.  `HistoryTime(0)` is
+  // `initial_time_`.
   Instant HistoryTime(Instant const time, int const step) {
     return time + step * plugin_->Δt();
   }
@@ -296,8 +304,8 @@ TEST_F(PluginTest, Serialization) {
   GUID const satellite = "satellite";
   PartId const part_id = 666;
 
-  // We need an actual |Plugin| here rather than a |TestablePlugin|, since
-  // that's what |ReadFromMessage| returns.
+  // We need an actual `Plugin` here rather than a `TestablePlugin`, since
+  // that's what `ReadFromMessage` returns.
   auto plugin = make_not_null_unique<Plugin>(
                     initial_time_,
                     initial_time_,
@@ -449,7 +457,7 @@ TEST_F(PluginTest, Serialization) {
 TEST_F(PluginTest, Initialization) {
   InsertAllSolarSystemBodies();
   plugin_->EndInitialization();
-  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(_)).Times(AnyNumber());
+  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(_, _)).Times(AnyNumber());
   for (int index = SolarSystemFactory::Sun + 1;
        index <= SolarSystemFactory::LastMajorBody;
        ++index) {
@@ -587,7 +595,7 @@ TEST_F(PluginTest, HierarchicalInitialization) {
       initial_state);
 
   plugin_->EndInitialization();
-  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(_)).Times(AnyNumber());
+  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(_, _)).Times(AnyNumber());
   EXPECT_THAT(plugin_->CelestialFromParent(1).displacement().Norm(),
               AlmostEquals(3 * Kilo(Metre), 1, 7));
   EXPECT_THAT(plugin_->CelestialFromParent(2).displacement().Norm(),
@@ -687,7 +695,7 @@ TEST_F(PluginDeathTest, InsertUnloadedPartError) {
                                 /*loaded=*/false,
                                 inserted);
     Instant const initial_time = ParseTT(initial_time_);
-    EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(initial_time));
+    EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(initial_time, _));
     plugin_->InsertUnloadedPart(
         part_id,
         "part",
@@ -766,7 +774,7 @@ TEST_F(PluginTest, VesselInsertionAtInitialization) {
                               inserted);
   EXPECT_TRUE(inserted);
   Instant const initial_time = ParseTT(initial_time_);
-  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(initial_time))
+  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(initial_time, _))
       .Times(AnyNumber());
   plugin_->InsertUnloadedPart(
       part_id,
@@ -785,7 +793,7 @@ TEST_F(PluginTest, VesselInsertionAtInitialization) {
 TEST_F(PluginTest, UpdateCelestialHierarchy) {
   InsertAllSolarSystemBodies();
   plugin_->EndInitialization();
-  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(_)).Times(AnyNumber());
+  EXPECT_CALL(plugin_->mock_ephemeris(), Prolong(_, _)).Times(AnyNumber());
   for (int index = SolarSystemFactory::Sun + 1;
        index <= SolarSystemFactory::LastMajorBody;
        ++index) {

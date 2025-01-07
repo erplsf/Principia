@@ -1,9 +1,11 @@
 #include "base/array.hpp"
 
+#include <memory>
 #include <string>
+#include <utility>
 
-#include "gtest/gtest.h"
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 
 using ::testing::AllOf;
 using ::testing::ElementsAre;
@@ -82,7 +84,7 @@ TEST(ArrayTest, Return) {
   };
 }
 
-// This test only compiles if the constructor correctly uses |std::forward|.
+// This test only compiles if the constructor correctly uses `std::forward`.
 TEST(ArrayTest, Move) {
   [[maybe_unused]] auto fn =
       [](std::unique_ptr<int> x,

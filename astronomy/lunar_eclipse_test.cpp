@@ -1,7 +1,10 @@
-#include "astronomy/epoch.hpp"
+#include <memory>
+
+#include "astronomy/frames.hpp"
 #include "astronomy/time_scales.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
+#include "geometry/sign.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "integrators/methods.hpp"
@@ -9,12 +12,13 @@
 #include "numerics/root_finders.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/solar_system.hpp"
+#include "quantities/astronomy.hpp"
 #include "quantities/elementary_functions.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "testing_utilities/approximate_quantity.hpp"
 #include "testing_utilities/is_near.hpp"
-#include "testing_utilities/matchers.hpp"
+#include "testing_utilities/matchers.hpp"  // 🧙 For EXPECT_OK.
 #include "testing_utilities/numerics.hpp"
 
 namespace principia {
@@ -73,8 +77,8 @@ class LunarEclipseTest : public ::testing::Test {
     atmospheric_depth_ = (1.0 / 85.0 - 1.0 / 594.0) * r_earth_;
   }
 
-  // A positive |time_error| means that the actual contact happens after
-  // |current_time|.
+  // A positive `time_error` means that the actual contact happens after
+  // `current_time`.
   void CheckLunarUmbralEclipse(Instant const& current_time,
                                Sign const moon_offset_sign,
                                ApproximateQuantity<Angle> const& angular_error,
@@ -108,7 +112,7 @@ class LunarEclipseTest : public ::testing::Test {
               (r_earth_ + atmospheric_depth_ + moon_offset_sign * r_moon_) /
               Sin(umbral_half_aperture(t));
       // Angle between Earth and Moon as seen at
-      // |apex_of_moon_locus_at_umbral_contact|.
+      // `apex_of_moon_locus_at_umbral_contact`.
       return AngleBetween(apex_of_moon_locus_at_umbral_contact - q_earth,
                           apex_of_moon_locus_at_umbral_contact - q_moon);
     };
@@ -135,8 +139,8 @@ class LunarEclipseTest : public ::testing::Test {
               << " " << actual_contact_time - current_time;
   }
 
-  // A positive |time_error| means that the actual contact happens after
-  // |current_time|.
+  // A positive `time_error` means that the actual contact happens after
+  // `current_time`.
   void CheckLunarPenumbralEclipse(
       Instant const& current_time,
       Sign const moon_offset_sign,

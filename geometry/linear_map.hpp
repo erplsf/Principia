@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/concepts.hpp"
 #include "base/mappable.hpp"
 #include "base/not_null.hpp"
 #include "geometry/grassmann.hpp"
@@ -10,15 +11,20 @@ namespace geometry {
 namespace _linear_map {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_mappable;
 using namespace principia::base::_not_null;
-using namespace principia::base::_traits;
 using namespace principia::geometry::_grassmann;
 
 template<typename Map, typename FromFrame, typename ToFrame>
 class LinearMap {
  public:
   virtual ~LinearMap() = default;
+
+  friend bool operator==(LinearMap const& left,
+                         LinearMap const& right) = default;
+  friend bool operator!=(LinearMap const& left,
+                         LinearMap const& right) = default;
 
   // The contract of linear maps.  All subclasses must implement these functions
   // lest they go into infinite loops or trigger weird compilation errors.  In
@@ -47,11 +53,8 @@ class LinearMap {
 
   static void WriteToMessage(not_null<serialization::LinearMap*> message);
 
-  template<typename F = FromFrame,
-           typename T = ToFrame,
-           typename = std::enable_if_t<is_serializable_v<F> &&
-                                       is_serializable_v<T>>>
-  static void ReadFromMessage(serialization::LinearMap const& message);
+  static void ReadFromMessage(serialization::LinearMap const& message)
+    requires serializable<FromFrame> && serializable<ToFrame>;
 };
 
 }  // namespace internal

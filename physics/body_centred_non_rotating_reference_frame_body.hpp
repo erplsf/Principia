@@ -2,10 +2,14 @@
 
 #include "physics/body_centred_non_rotating_reference_frame.hpp"
 
+#include <memory>
 #include <utility>
 
 #include "geometry/identity.hpp"
 #include "geometry/rotation.hpp"
+#include "geometry/space_transformations.hpp"
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/rotating_body.hpp"
 
 namespace principia {
 namespace physics {
@@ -13,8 +17,8 @@ namespace _body_centred_non_rotating_reference_frame {
 namespace internal {
 
 using namespace principia::geometry::_identity;
-using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_rotation;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_rotating_body;
 
@@ -27,9 +31,9 @@ BodyCentredNonRotatingReferenceFrame(
       centre_(std::move(centre)),
       centre_trajectory_(ephemeris_->trajectory(centre_)),
       orthogonal_map_([this]() {
-        // Note that we cannot do this by making |equatorial| and
-        // |biequatorial| virtual members of |MassiveBody|, because that
-        // class is not templatized on |InertialFrame|.
+        // Note that we cannot do this by making `equatorial` and
+        // `biequatorial` virtual members of `MassiveBody`, because that
+        // class is not templatized on `InertialFrame`.
         auto const rotating_body =
             dynamic_cast<RotatingBody<InertialFrame> const*>(&*centre_);
         if (rotating_body == nullptr) {

@@ -23,12 +23,10 @@ class Complexification {
   Complexification(V const& real_part);  // NOLINT(runtime/explicit)
   Complexification(Vector const& real_part, Vector const& imaginary_part);
 
-  Vector const& real_part() const;
-  Vector const& imaginary_part() const;
-
-  Complexification Conjugate() const;
-
-  typename Hilbert<Vector>::Norm²Type Norm²() const;
+  friend bool operator==(Complexification const& left,
+                         Complexification const& right) = default;
+  friend bool operator!=(Complexification const& left,
+                         Complexification const& right) = default;
 
   template<typename R>
   Complexification& operator+=(R const& right);
@@ -39,17 +37,17 @@ class Complexification {
   template<typename R>
   Complexification& operator/=(R const& right);
 
+  Vector const& real_part() const;
+  Vector const& imaginary_part() const;
+
+  Complexification Conjugate() const;
+
+  typename Hilbert<Vector>::Norm²Type Norm²() const;
+
  private:
   Vector real_part_{};
   Vector imaginary_part_{};
 };
-
-template<typename Vector>
-bool operator==(Complexification<Vector> const& left,
-                Complexification<Vector> const& right);
-template<typename Vector>
-bool operator!=(Complexification<Vector> const& left,
-                Complexification<Vector> const& right);
 
 template<typename Vector>
 Complexification<Vector> operator+(Complexification<Vector> const& right);

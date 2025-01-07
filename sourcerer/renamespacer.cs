@@ -6,6 +6,7 @@ using System.Linq;
 using static principia.sourcerer.Analyser;
 using static principia.sourcerer.Filenames;
 using static principia.sourcerer.Parser;
+using static principia.sourcerer.Rewriter;
 
 namespace principia {
 namespace sourcerer {
@@ -140,9 +141,9 @@ class Renamespacer {
     }
   }
 
-  // Insert a using directive for |file_namespace| at the correct place in
-  // |using_directives|, but only if it's not there already.  If
-  // |using_directives| is empty, the insertion takes place after |after|.
+  // Insert a using directive for `file_namespace` at the correct place in
+  // `using_directives`, but only if it's not there already.  If
+  // `using_directives` is empty, the insertion takes place after `after`.
   // Return true iff a directive was added.
   private static bool InsertUsingDirectiveIfNeeded(
       string file_namespace,
@@ -169,7 +170,7 @@ class Renamespacer {
       return false;
     }
 
-    // Insert the using directive.  Note that we must update |using_directives|.
+    // Insert the using directive.  Note that we must update `using_directives`.
     var parent = file_namespace_insertion_point.parent;
     Debug.Assert(parent is Namespace, "Insertion point not within a namespace");
     int insertion_point_position_in_parent =
@@ -365,39 +366,6 @@ class Renamespacer {
       parent.children = preceding_nodes_in_parent;
       parent.AddChildren(nodes_in_internal_namespace);
       parent.AddChildren(following_nodes_in_parent);
-    }
-  }
-
-  private static void RewriteFile(FileInfo input_file,
-                                  Parser.File file,
-                                  bool dry_run) {
-    string input_filename = input_file.FullName;
-    string output_filename =
-        input_file.DirectoryName + "\\" + input_file.Name + ".new";
-
-    using (StreamWriter writer = System.IO.File.CreateText(output_filename)) {
-      RewriteNode(writer, file);
-    }
-    if (!dry_run) {
-      System.IO.File.Move(output_filename, input_filename, overwrite: true);
-    }
-  }
-
-  private static void RewriteNode(StreamWriter writer, Parser.Node node) {
-    foreach (Parser.Node child in node.children) {
-      if (child.must_rewrite) {
-        writer.WriteLine(child.Cxx());
-      } else {
-        writer.WriteLine(child.text);
-      }
-      if (child is Parser.Namespace ns) {
-        RewriteNode(writer, child);
-        if (ns.must_rewrite) {
-          writer.WriteLine(ns.ClosingCxx());
-        } else {
-          writer.WriteLine(ns.closing_text);
-        }
-      }
     }
   }
 }

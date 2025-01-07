@@ -2,18 +2,17 @@
 
 #include <algorithm>
 #include <functional>
-#include <limits>
-#include <list>
+#include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/btree_set.h"
-#include "base/macros.hpp"
+#include "base/concepts.hpp"
 #include "base/map_util.hpp"
+#include "geometry/barycentre_calculator.hpp"
 #include "ksp_plugin/integrators.hpp"
-#include "ksp_plugin/pile_up.hpp"
-#include "quantities/si.hpp"
 #include "testing_utilities/make_not_null.hpp"
 
 namespace principia {
@@ -22,16 +21,10 @@ namespace _vessel {
 namespace internal {
 
 using ::std::placeholders::_1;
-using namespace principia::base::_jthread;
+using namespace principia::base::_concepts;
 using namespace principia::base::_map_util;
-using namespace principia::base::_not_null;
-using namespace principia::base::_traits;
 using namespace principia::geometry::_barycentre_calculator;
 using namespace principia::ksp_plugin::_integrators;
-using namespace principia::physics::_clientele;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
-using namespace principia::quantities::_si;
 using namespace principia::testing_utilities::_make_not_null;
 
 using namespace std::chrono_literals;
@@ -195,7 +188,7 @@ void Vessel::DetectCollapsibilityChange() {
     // that downsampling does not change collapsibility boundaries.
 
     // In normal situations we create a new segment with the collapsibility
-    // given by |will_be_collapsible|.  In one cornercase we delete the current
+    // given by `will_be_collapsible`.  In one cornercase we delete the current
     // segment.
     enum {
       Create,
@@ -222,7 +215,7 @@ void Vessel::DetectCollapsibilityChange() {
         // If there are no checkpoints in the current trajectory (this would
         // happen if we restored the last part of trajectory and it didn't
         // overlap with a checkpoint and no reanimation happened) then the
-        // |oldest_reanimated_checkpoint_| need to be updated to reflect the
+        // `oldest_reanimated_checkpoint_` need to be updated to reflect the
         // newly created checkpoint.
         absl::MutexLock l(&lock_);
         if (oldest_reanimated_checkpoint_ == InfiniteFuture) {
@@ -350,9 +343,57 @@ void Vessel::SelectFlightPlan(int index) {
 
 FlightPlan& Vessel::flight_plan() const {
   CHECK(has_deserialized_flight_plan());
-  auto& flight_plan =
-      *std::get<not_null<std::unique_ptr<FlightPlan>>>(selected_flight_plan());
-  return flight_plan;
+  return *std::get<OptimizableFlightPlan>(selected_flight_plan()).flight_plan;
+}
+
+void Vessel::MakeFlightPlanOptimizationDriver(
+    FlightPlanOptimizer::MetricFactory metric_factory) {
+  ReadFlightPlanFromMessage();
+  auto& [flight_plan, optimization_driver] =
+      std::get<OptimizableFlightPlan>(selected_flight_plan());
+  if (optimization_driver != nullptr) {
+    optimization_driver->Interrupt();
+  }
+  optimization_driver = make_not_null_unique<FlightPlanOptimizationDriver>(
+      flight_plan, std::move(metric_factory));
+}
+
+void Vessel::StartFlightPlanOptimizationDriver(
+    FlightPlanOptimizationDriver::Parameters const& parameters) {
+  // No need to deserialize here, we have surely called
+  // `MakeFlightPlanOptimizationDriver`, otherwise the driver would be null.
+  CHECK(has_deserialized_flight_plan());
+  auto const& driver = std::get<OptimizableFlightPlan>(selected_flight_plan())
+                           .optimization_driver;
+  CHECK_NOTNULL(driver);
+  driver->RequestOptimization(parameters);
+}
+
+std::optional<FlightPlanOptimizationDriver::Parameters>
+Vessel::FlightPlanOptimizationDriverInProgress() const {
+  auto const& driver = std::get<OptimizableFlightPlan>(selected_flight_plan())
+                           .optimization_driver;
+  if (driver == nullptr || driver->done()) {
+    return std::nullopt;
+  } else {
+    return driver->last_parameters();
+  }
+}
+
+bool Vessel::UpdateFlightPlanFromOptimization() {
+  ReadFlightPlanFromMessage();
+  auto& [flight_plan, optimization_driver] =
+      std::get<OptimizableFlightPlan>(selected_flight_plan());
+  if (optimization_driver == nullptr) {
+    return false;
+  }
+  std::shared_ptr const last_flight_plan =
+      optimization_driver->last_flight_plan();
+  if (flight_plan != last_flight_plan) {
+    flight_plan = last_flight_plan;
+    return true;
+  }
+  return false;
 }
 
 void Vessel::ReadFlightPlanFromMessage() {
@@ -361,7 +402,9 @@ void Vessel::ReadFlightPlanFromMessage() {
           selected_flight_plan())) {
     auto const& message =
         std::get<serialization::FlightPlan>(selected_flight_plan());
-    selected_flight_plan() = FlightPlan::ReadFromMessage(message, ephemeris_);
+    selected_flight_plan() = OptimizableFlightPlan{
+        .flight_plan = FlightPlan::ReadFromMessage(message, ephemeris_),
+        .optimization_driver = nullptr};
   }
 }
 
@@ -393,7 +436,7 @@ void Vessel::AdvanceTime() {
   // multiple points, say one at t₀ + 21 s and one at t₀ + 24 s.  In this case
   // trying to insert the point at t₀ + 21 s would put us before the last point
   // of the history of B and would fail a check.  Therefore, we just ignore that
-  // point.  See #2507 and the |last_time| in AppendToVesselTrajectory.
+  // point.  See #2507 and the `last_time` in AppendToVesselTrajectory.
   AppendToVesselTrajectory(&Part::psychohistory_begin,
                            &Part::psychohistory_end,
                            *psychohistory_);
@@ -470,15 +513,17 @@ void Vessel::CreateFlightPlan(
         flight_plan_adaptive_step_parameters,
     Ephemeris<Barycentric>::GeneralizedAdaptiveStepParameters const&
         flight_plan_generalized_adaptive_step_parameters) {
-  auto const flight_plan_start = backstory_->back();
-  flight_plans_.emplace_back(make_not_null_unique<FlightPlan>(
-      initial_mass,
-      /*initial_time=*/flight_plan_start.time,
-      /*initial_degrees_of_freedom=*/flight_plan_start.degrees_of_freedom,
-      final_time,
-      ephemeris_,
-      flight_plan_adaptive_step_parameters,
-      flight_plan_generalized_adaptive_step_parameters));
+  auto const& flight_plan_start = backstory_->back();
+  flight_plans_.emplace_back(OptimizableFlightPlan{
+      .flight_plan = make_not_null_unique<FlightPlan>(
+          initial_mass,
+          /*initial_time=*/flight_plan_start.time,
+          /*initial_degrees_of_freedom=*/flight_plan_start.degrees_of_freedom,
+          final_time,
+          ephemeris_,
+          flight_plan_adaptive_step_parameters,
+          flight_plan_generalized_adaptive_step_parameters),
+      .optimization_driver = nullptr});
   selected_flight_plan_index_ = flight_plans_.size() - 1;
 }
 
@@ -494,11 +539,13 @@ void Vessel::DuplicateFlightPlan() {
   // the sake of laziness.
   if (std::holds_alternative<serialization::FlightPlan>(original)) {
     flight_plans_.emplace(it, std::get<serialization::FlightPlan>(original));
-  } else if (std::holds_alternative<not_null<std::unique_ptr<FlightPlan>>>(
-                 original)) {
-    std::get<not_null<std::unique_ptr<FlightPlan>>>(original)->WriteToMessage(
-        &std::get<serialization::FlightPlan>(*flight_plans_.emplace(
-            it, std::in_place_type<serialization::FlightPlan>)));
+  } else if (std::holds_alternative<OptimizableFlightPlan>(original)) {
+    flight_plans_.emplace(
+        it,
+        OptimizableFlightPlan{
+            .flight_plan = make_not_null_unique<FlightPlan>(
+                *std::get<OptimizableFlightPlan>(original).flight_plan),
+            .optimization_driver = nullptr});
   } else {
     LOG(FATAL) << "Unexpected flight plan variant " << original.index();
   }
@@ -515,7 +562,7 @@ void Vessel::DeleteFlightPlan() {
 absl::Status Vessel::RebaseFlightPlan(Mass const& initial_mass) {
   CHECK(has_deserialized_flight_plan());
   auto& flight_plan =
-      std::get<not_null<std::unique_ptr<FlightPlan>>>(selected_flight_plan());
+      std::get<OptimizableFlightPlan>(selected_flight_plan()).flight_plan;
   Instant const new_initial_time = backstory_->back().time;
   int first_manœuvre_kept = 0;
   for (int i = 0; i < flight_plan->number_of_manœuvres(); ++i) {
@@ -528,7 +575,7 @@ absl::Status Vessel::RebaseFlightPlan(Mass const& initial_mass) {
       }
     }
   }
-  not_null<std::unique_ptr<FlightPlan>> const original_flight_plan =
+  not_null<std::shared_ptr<FlightPlan>> const original_flight_plan =
       std::move(flight_plan);
   Instant const new_desired_final_time =
       new_initial_time >= original_flight_plan->desired_final_time()
@@ -553,11 +600,11 @@ absl::Status Vessel::RebaseFlightPlan(Mass const& initial_mass) {
 }
 
 void Vessel::RefreshPrediction() {
-  // The |prognostication| is a trajectory which is computed asynchronously and
+  // The `prognostication` is a trajectory which is computed asynchronously and
   // may be used as a prediction;
   std::optional<DiscreteTrajectory<Barycentric>> prognostication;
 
-  // Note that we know that |RefreshPrediction| is called on the main thread,
+  // Note that we know that `RefreshPrediction` is called on the main thread,
   // therefore the ephemeris currently covers the last time of the
   // psychohistory.  Were this to change, this code might have to change.
   PrognosticatorParameters prognosticator_parameters{
@@ -659,9 +706,9 @@ void Vessel::WriteToMessage(not_null<serialization::Vessel*> const message,
   }
 
   // If the vessel is collapsible, we serialize at most the last
-  // |max_points_to_serialize| of the part of the trajectory that ends at the
-  // |backstory_|.  If it is not, however, we must serialize at least the entire
-  // |backstory_| otherwise we'd lose the beginning of a non-collapsible
+  // `max_points_to_serialize` of the part of the trajectory that ends at the
+  // `backstory_`.  If it is not, however, we must serialize at least the entire
+  // `backstory_` otherwise we'd lose the beginning of a non-collapsible
   // segment.
   std::int64_t const history_size = backstory_->end() - trajectory_.begin();
   std::int64_t const max_points_to_serialize_present_in_history =
@@ -683,11 +730,12 @@ void Vessel::WriteToMessage(not_null<serialization::Vessel*> const message,
     if (std::holds_alternative<serialization::FlightPlan>(flight_plan)) {
       *message->add_flight_plans() =
           std::get<serialization::FlightPlan>(flight_plan);
-    } else if (std::holds_alternative<not_null<std::unique_ptr<FlightPlan>>>(
+    } else if (std::holds_alternative<OptimizableFlightPlan>(
                    flight_plan)) {
       auto& deserialized_flight_plan =
-          std::get<not_null<std::unique_ptr<FlightPlan>>>(flight_plan);
-      deserialized_flight_plan->WriteToMessage(message->add_flight_plans());
+          std::get<OptimizableFlightPlan>(flight_plan);
+      deserialized_flight_plan.flight_plan->WriteToMessage(
+          message->add_flight_plans());
     } else {
       LOG(FATAL) << "Unexpected flight plan variant " << flight_plan.index();
     }
@@ -720,7 +768,7 @@ not_null<std::unique_ptr<Vessel>> Vessel::ReadFromMessage(
           : is_pre_हरीश_चंद्र  ? "हरीश चंद्र"
                             : "Hilbert") << " Vessel";
 
-  // NOTE(egg): for now we do not read the |MasslessBody| as it can contain no
+  // NOTE(egg): for now we do not read the `MasslessBody` as it can contain no
   // information.
   auto vessel = make_not_null_unique<Vessel>(
       message.guid(),
@@ -749,8 +797,8 @@ not_null<std::unique_ptr<Vessel>> Vessel::ReadFromMessage(
     auto const psychohistory =
         DiscreteTrajectory<Barycentric>::ReadFromMessage(message.history(),
                                                          /*tracked=*/{});
-    // The |backstory_| has been created by the constructor above.  Reconstruct
-    // it from the |psychohistory|.
+    // The `backstory_` has been created by the constructor above.  Reconstruct
+    // it from the `psychohistory`.
     for (auto it = psychohistory.begin(); it != psychohistory.end();) {
       auto const& [time, degrees_of_freedom] = *it;
       ++it;
@@ -910,10 +958,10 @@ Vessel::Vessel()
 
 Checkpointer<serialization::Vessel>::Writer Vessel::MakeCheckpointerWriter() {
   return [this](not_null<serialization::Vessel::Checkpoint*> const message) {
-    // The extremities of the |backstory_| are implicitly exact.  Note that
-    // |backstory_->end()| might cause serialization of a 1-point psychohistory
+    // The extremities of the `backstory_` are implicitly exact.  Note that
+    // `backstory_->end()` might cause serialization of a 1-point psychohistory
     // or prediction (at the last time of the backstory).  To figure things out
-    // when reading we must track the |backstory_|.
+    // when reading we must track the `backstory_`.
     trajectory_.WriteToMessage(message->mutable_non_collapsible_segment(),
                                backstory_->begin(),
                                backstory_->end(),
@@ -937,7 +985,7 @@ Checkpointer<serialization::Vessel>::Reader Vessel::MakeCheckpointerReader() {
 absl::Status Vessel::Reanimate(Instant const desired_t_min) {
   // This method is very similar to Ephemeris::Reanimate.  See the comments
   // there for some of the subtle points.
-  static_assert(is_serializable_v<Barycentric>);
+  static_assert(serializable<Barycentric>);
   absl::btree_set<Instant> checkpoints;
   LOG(INFO) << "Reanimating " << ShortDebugString() << " until "
             << desired_t_min;
@@ -956,7 +1004,7 @@ absl::Status Vessel::Reanimate(Instant const desired_t_min) {
     checkpoints = checkpointer_->all_checkpoints_between(
         oldest_checkpoint_to_reanimate, oldest_reanimated_checkpoint_);
 
-    // The |oldest_reanimated_checkpoint_| has already been reanimated before,
+    // The `oldest_reanimated_checkpoint_` has already been reanimated before,
     // we don't need it below.
     checkpoints.erase(oldest_reanimated_checkpoint_);
   }
@@ -1002,7 +1050,7 @@ absl::StatusOr<Instant> Vessel::ReanimateOneCheckpoint(
   std::int64_t const reanimated_trajectory_size = reanimated_trajectory.size();
 
   // Construct a new collapsible segment at the end of the non-collapsible
-  // backstory and integrate it until |t_final|.
+  // backstory and integrate it until `t_final`.
   ++reanimated_backstory;
   reanimated_trajectory.DeleteSegments(reanimated_backstory);
   auto const collapsible_segment = reanimated_trajectory.NewSegment();
@@ -1066,7 +1114,7 @@ absl::StatusOr<DiscreteTrajectory<Barycentric>> Vessel::FlowPrognostication(
       FlightPlan::max_ephemeris_steps_per_frame);
   bool const reached_t_max = status.ok();
   if (reached_t_max) {
-    // This will prolong the ephemeris by |max_ephemeris_steps_per_frame|.
+    // This will prolong the ephemeris by `max_ephemeris_steps_per_frame`.
     status = ephemeris_->FlowWithAdaptiveStep(
         &prognostication,
         Ephemeris<Barycentric>::NoIntrinsicAcceleration,
@@ -1082,7 +1130,7 @@ absl::StatusOr<DiscreteTrajectory<Barycentric>> Vessel::FlowPrognostication(
     return status;
   } else {
     // Unless we were stopped, ignore the status, which indicates a failure to
-    // reach |t_max|, and provide a short prognostication.
+    // reach `t_max`, and provide a short prognostication.
     return std::move(prognostication);
   }
 }
@@ -1173,7 +1221,7 @@ bool Vessel::IsCollapsible() const {
     }
   }
   CHECK_NE(nullptr, containing_pile_up);
-  for (const auto part : containing_pile_up->parts()) {
+  for (auto const& part : containing_pile_up->parts()) {
     // Not collapsible if the pile-up contains a part not in this vessel.
     if (!parts.contains(part)) {
       return false;
@@ -1184,8 +1232,7 @@ bool Vessel::IsCollapsible() const {
 
 bool Vessel::has_deserialized_flight_plan() const {
   return !flight_plans_.empty() &&
-         std::holds_alternative<not_null<std::unique_ptr<FlightPlan>>>(
-             selected_flight_plan());
+         std::holds_alternative<OptimizableFlightPlan>(selected_flight_plan());
 }
 
 Vessel::LazilyDeserializedFlightPlan& Vessel::selected_flight_plan() {

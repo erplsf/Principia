@@ -14,18 +14,16 @@ namespace geometry {
 namespace _rotation {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::base::_traits;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_r3x3_matrix;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_quantities;
 
 // Well-conditioned conversion of a rotation matrix to a quaternion.  See
 // http://en.wikipedia.org/wiki/Rotation_matrix#Quaternion and
 // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/.
 FORCE_INLINE(inline) Quaternion ToQuaternion(R3x3Matrix<double> const& matrix) {
-  // TODO(egg): this should probably contain some checks that |matrix| has
+  // TODO(egg): this should probably contain some checks that `matrix` has
   // positive determinant...
   double const t = matrix.Trace();
   double real_part;
@@ -65,14 +63,14 @@ FORCE_INLINE(inline) Quaternion ToQuaternion(R3x3Matrix<double> const& matrix) {
   return Quaternion(real_part, imaginary_part);
 }
 
-// Returns a rotation of |angle| around |axis|.  |axis| must be normalized.
+// Returns a rotation of `angle` around `axis`.  `axis` must be normalized.
 inline Quaternion AngleAxis(Angle const& angle, R3Element<double> const& axis) {
   Angle const half_angle = 0.5 * angle;
   return Quaternion(Cos(half_angle), Sin(half_angle) * axis);
 }
 
-// Returns the digits of the 3ⁿs from the given |BinaryCodedTernary number|.
-// Note that this does not check that |number| is valid binary-coded ternary,
+// Returns the digits of the 3ⁿs from the given `BinaryCodedTernary number`.
+// Note that this does not check that `number` is valid binary-coded ternary,
 // nor that the result is between 1 and 2.
 template<typename BinaryCodedTernary>
 int BinaryCodedTernaryDigit(int const n, BinaryCodedTernary const number) {
@@ -184,7 +182,7 @@ Sign Rotation<FromFrame, ToFrame>::Determinant() const {
 
 template<typename FromFrame, typename ToFrame>
 Rotation<ToFrame, FromFrame> Rotation<FromFrame, ToFrame>::Inverse() const {
-  // Because |quaternion_| has norm 1, its inverse is just its conjugate.
+  // Because `quaternion_` has norm 1, its inverse is just its conjugate.
   return Rotation<ToFrame, FromFrame>(quaternion_.Conjugate());
 }
 
@@ -315,9 +313,9 @@ void Rotation<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Rotation<FromFrame, ToFrame> Rotation<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::LinearMap const& message) {
+    serialization::LinearMap const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   LinearMap<Rotation, FromFrame, ToFrame>::ReadFromMessage(message);
   CHECK(message.HasExtension(serialization::Rotation::extension));
   return ReadFromMessage(
@@ -331,9 +329,9 @@ void Rotation<FromFrame, ToFrame>::WriteToMessage(
 }
 
 template<typename FromFrame, typename ToFrame>
-template<typename, typename, typename>
 Rotation<FromFrame, ToFrame> Rotation<FromFrame, ToFrame>::ReadFromMessage(
-    serialization::Rotation const& message) {
+    serialization::Rotation const& message)
+  requires serializable<FromFrame> && serializable<ToFrame> {
   return Rotation(Quaternion::ReadFromMessage(message.quaternion()));
 }
 
@@ -363,18 +361,6 @@ Rotation<FromFrame, ToFrame> operator*(
     Rotation<ThroughFrame, ToFrame> const& left,
     Rotation<FromFrame, ThroughFrame> const& right) {
   return Rotation<FromFrame, ToFrame>(left.quaternion_ * right.quaternion_);
-}
-
-template<typename From, typename To>
-bool operator==(Rotation<From, To> const& left,
-                Rotation<From, To> const& right) {
-  return left.quaternion_ == right.quaternion_;
-}
-
-template<typename From, typename To>
-bool operator!=(Rotation<From, To> const& left,
-                Rotation<From, To> const& right) {
-  return left.quaternion_ != right.quaternion_;
 }
 
 template<typename FromFrame, typename ToFrame>

@@ -4,12 +4,13 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "base/macros.hpp"
 #include "geometry/barycentre_calculator.hpp"
+#include "geometry/grassmann.hpp"
 #include "numerics/gradient_descent.hpp"
 #include "quantities/elementary_functions.hpp"
 
@@ -18,16 +19,13 @@ namespace numerics {
 namespace _global_optimization {
 namespace internal {
 
-using base::noreturn;
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_barycentre_calculator;
 using namespace principia::geometry::_grassmann;
 using namespace principia::numerics::_gradient_descent;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_quantities;
 
-// Values that are too small cause extra activity in |Add| and deeper recursion
-// in |FindNearestNeighbour|.  Values that are too large cause extra function
+// Values that are too small cause extra activity in `Add` and deeper recursion
+// in `FindNearestNeighbour`.  Values that are too large cause extra function
 // evaluations in the leaf search.
 constexpr int64_t pcp_tree_max_values_per_cell = 20;
 
@@ -41,7 +39,7 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::Box::measure() const {
   } else if constexpr (dimensions == 3) {
     return 8 * Wedge(vertices[0], Wedge(vertices[1], vertices[2])).Norm();
   }
-  noreturn();
+  std::abort();
 }
 
 template<typename Scalar, typename Argument, int dimensions>
@@ -116,7 +114,7 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
   // This is the set X* from [RT87b].
   Arguments stationary_points;
 
-  // The sample points.  We'll have at least |points_per_round| points.
+  // The sample points.  We'll have at least `points_per_round` points.
   Arguments points;
   points.reserve(points_per_round);
 
@@ -136,8 +134,8 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
 
   // This structure corresponds to the list T in [RT87b].  Points are ordered
   // based on their distance to their nearest neighbour that has a lower value
-  // of |f|.  When new points are added to the map, they are initially given the
-  // key |Infinity|, which is then refined when the nearest neighbour search
+  // of `f`.  When new points are added to the map, they are initially given the
+  // key `Infinity`, which is then refined when the nearest neighbour search
   // happens.  Each time through the outer loop, only the points in the upper
   // half of the map (distance greater than rₖ) are considered, and they are
   // moved down if a "too close" neighbour is found.
@@ -150,9 +148,9 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
   // [RT87b]; or we can use the optimal Bayesian stopping rule described in
   // proposition 2 of [RT87a] and equations (3) and (4) of [RT87b].  For
   // consistency with most of the description in [RT87a] and [RT87b], we call
-  // |N| the number of points added in a particular iteration and |kN| the total
-  // number of sampling points so far, even if |N| varies from one iteration to
-  // the next and |kN| is not necessarily |k * N|.
+  // `N` the number of points added in a particular iteration and `kN` the total
+  // number of sampling points so far, even if `N` varies from one iteration to
+  // the next and `kN` is not necessarily `k * N`.
   std::int64_t number_of_points_all_rounds;
   std::int64_t number_of_points_this_round;
   std::int64_t round = 1;
@@ -171,7 +169,7 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
       }
     } else {
       std::int64_t const w = stationary_points.size();
-      // Note that |w| may be 0 here if the stationary points were all outside
+      // Note that `w` may be 0 here if the stationary points were all outside
       // the local search radius.
       DCHECK_GT(kN, w + 2);
       // [RT87b] equation 3.
@@ -190,7 +188,7 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
     }
 
     // Generate N new random points and add them to the PCP tree and to the
-    // |schedule| map.  Note that while [RT87b] tells us in the description of
+    // `schedule` map.  Note that while [RT87b] tells us in the description of
     // algorithm A that "it is no longer necessary to reduce the sample" they
     // also tell us in section 4 that they reduce the sample using γ = 0.1.
     // Also, [KS05] reduce the sample, but they don't seem to agree on whether
@@ -225,7 +223,7 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
         // of the box: it's possible that xᵢ would be near one vertex of the box
         // and the stationary point near the opposite vertex.
         ++number_of_local_searches;
-        auto const stationary_point =
+        auto const status_or_stationary_point =
             BroydenFletcherGoldfarbShanno(xᵢ,
                                           f,
                                           grad_f,
@@ -234,24 +232,26 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::FindGlobalMinima(
 
         // If the new stationary point is sufficiently far from the ones we
         // already know, record it.
-        if (stationary_point.has_value() &&
-            IsNewStationaryPoint(stationary_point.value(),
-                                 stationary_point_neighbourhoods,
-                                 local_search_tolerance)) {
-          stationary_points.push_back(
-              std::make_unique<Argument>(stationary_point.value()));
-          stationary_point_neighbourhoods.Add(stationary_points.back().get());
+        if (status_or_stationary_point.ok()) {
+          auto const& stationary_point = status_or_stationary_point.value();
+          if (IsNewStationaryPoint(stationary_point,
+                                   stationary_point_neighbourhoods,
+                                   local_search_tolerance)) {
+            stationary_points.push_back(
+                std::make_unique<Argument>(stationary_point));
+            stationary_point_neighbourhoods.Add(stationary_points.back().get());
+          }
         }
         // A local search has been started from xᵢ, so no point in considering
         // it again.
         it = schedule.erase(it);
       } else {
-        // Move the point xᵢ "down" in the |schedule| map, based on the distance
+        // Move the point xᵢ "down" in the `schedule` map, based on the distance
         // to its nearest neighbour.
         auto const distance²_to_xⱼ = (xᵢ - *xⱼ).Norm²();
         DCHECK_LE(distance²_to_xⱼ, rₖ²);
         it = schedule.erase(it);
-        // This insertion take places below |schedule.upper_bound(rₖ²)|, so it
+        // This insertion take places below `schedule.upper_bound(rₖ²)`, so it
         // doesn't affect the current iteration.
         schedule.emplace(distance²_to_xⱼ, &xᵢ);
       }
@@ -314,7 +314,7 @@ MultiLevelSingleLinkage<Scalar, Argument, dimensions>::CriticalRadius²(
   } else if constexpr (dimensions == 3) {
     return Cbrt(Pow<2>(3.0 * box_measure_ * σ * std::log(kN) / (4.0 * π * kN)));
   }
-  noreturn();
+  std::abort();
 }
 
 }  // namespace internal

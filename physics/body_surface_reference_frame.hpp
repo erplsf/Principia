@@ -1,4 +1,4 @@
-// The files containing the tree of child classes of |RigidReferenceFrame| must
+// The files containing the tree of child classes of `RigidReferenceFrame` must
 // be included in the order of inheritance to avoid circular dependencies.  This
 // class will end up being reincluded as part of the implementation of its
 // parent.
@@ -8,16 +8,16 @@
 #ifndef PRINCIPIA_PHYSICS_BODY_SURFACE_REFERENCE_FRAME_HPP_
 #define PRINCIPIA_PHYSICS_BODY_SURFACE_REFERENCE_FRAME_HPP_
 
+#include <memory>
+
 #include "base/not_null.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/space.hpp"
 #include "physics/continuous_trajectory.hpp"
-#include "physics/degrees_of_freedom.hpp"
 #include "physics/ephemeris.hpp"
-#include "physics/rotating_body.hpp"
 #include "physics/rigid_motion.hpp"
-#include "physics/rigid_reference_frame.hpp"
+#include "physics/rotating_body.hpp"
 #include "quantities/named_quantities.hpp"
 
 namespace principia {
@@ -38,11 +38,11 @@ using namespace principia::quantities::_named_quantities;
 
 // The origin of the frame is the centre of mass of the body.  The X axis is at
 // the intersection of the equator and the prime meridian.  The Z axis is the
-// |polar_axis|.  The Y axis in on the equator so that the frame has the same
-// orientation as |InertialFrame|.
+// `polar_axis`.  The Y axis in on the equator so that the frame has the same
+// orientation as `InertialFrame`.
 // The X, Y, Z axes are the same as those shown on figure 1 of the 2015 report
-// of the IAU WGCCRE if |polar_axis| is the north pole, or figure 2 if
-// |polar_axis| is the positive pole.
+// of the IAU WGCCRE if `polar_axis` is the north pole, or figure 2 if
+// `polar_axis` is the positive pole.
 template<typename InertialFrame, typename ThisFrame>
 class BodySurfaceReferenceFrame : public RigidReferenceFrame<InertialFrame,
                                                              ThisFrame> {

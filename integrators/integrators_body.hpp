@@ -3,26 +3,23 @@
 #include "integrators/integrators.hpp"
 
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
-
-#include "base/macros.hpp"
 #include "base/traits.hpp"
 #include "integrators/embedded_explicit_generalized_runge_kutta_nyström_integrator.hpp"
+#include "integrators/embedded_explicit_runge_kutta_integrator.hpp"  // 🧙 For the integrator subclass.  // NOLINT
 #include "integrators/embedded_explicit_runge_kutta_nyström_integrator.hpp"
-#include "integrators/embedded_explicit_runge_kutta_integrator.hpp"
-#include "integrators/explicit_linear_multistep_integrator.hpp"
-#include "integrators/explicit_runge_kutta_integrator.hpp"
+#include "integrators/explicit_linear_multistep_integrator.hpp"  // 🧙 For the integrator subclass.  // NOLINT
 #include "integrators/methods.hpp"
 #include "integrators/symmetric_linear_multistep_integrator.hpp"
 #include "integrators/symplectic_runge_kutta_nyström_integrator.hpp"
 #include "quantities/serialization.hpp"
 
-// A case branch in a switch on the serialized integrator |kind|.  It determines
-// the |method| type from the |kind| defined in scope |message| and calls
-// |action| on it.  |action| must be a 1-argument macro.
+// A case branch in a switch on the serialized integrator `kind`.  It determines
+// the `method` type from the `kind` defined in scope `message` and calls
+// `action` on it.  `action` must be a 1-argument macro.
 #define PRINCIPIA_INTEGRATOR_CASE(message, kind, method, action) \
   case serialization::message::kind: {                           \
     action(method);                                              \
@@ -236,9 +233,10 @@ namespace integrators {
 namespace _integrators {
 namespace internal {
 
-using namespace principia::integrators::_methods;
+using namespace principia::base::_traits;
 using namespace principia::integrators::_embedded_explicit_generalized_runge_kutta_nyström_integrator;  // NOLINT
 using namespace principia::integrators::_embedded_explicit_runge_kutta_nyström_integrator;  // NOLINT
+using namespace principia::integrators::_methods;
 using namespace principia::integrators::_symmetric_linear_multistep_integrator;
 using namespace principia::integrators::_symplectic_runge_kutta_nyström_integrator;  // NOLINT
 using namespace principia::quantities::_serialization;
@@ -404,7 +402,7 @@ Result ReadSprkFromMessage(
       case serialization::FixedStepSizeIntegrator::BA:
       default:
         LOG(FATAL) << message.DebugString();
-        base::noreturn();
+        std::abort();
     }
   } else {
     CHECK_EQ(serialization::FixedStepSizeIntegrator::BA,
@@ -483,19 +481,22 @@ void FixedStepSizeIntegrator<ODE_>::Instance::WriteToMessage(
 
 #define PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_ERK(method) LOG(FATAL) << "NYI"
 
-#define PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_SLMS(method)              \
-  if constexpr (is_instance_of_v<SpecialSecondOrderDifferentialEquation, \
-                                 ODE>) {                                 \
-    auto const& integrator =                                             \
-        SymmetricLinearMultistepIntegrator<methods::method, ODE>();      \
-    return ReadSlmsInstanceFromMessage(                                  \
-        extension, problem, append_state, step, integrator);             \
-  } else {                                                               \
-    base::noreturn();                                                    \
+#define PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_SLMS(method)                 \
+  if constexpr (is_instance_of_v<SpecialSecondOrderDifferentialEquation,    \
+                                 ODE>) {                                    \
+    auto const& integrator =                                                \
+        SymmetricLinearMultistepIntegrator<methods::method, ODE>();         \
+    return ReadSlmsInstanceFromMessage(                                     \
+        extension, problem, append_state, step, integrator);                \
+  } else {                                                                  \
+    LOG(FATAL) << "Incorrect ODE for an SLMS: " << extension.DebugString(); \
   }
 
+// An SPRK can be viewed as an SRKN, so we need to check for both kinds of ODE.
 #define PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_SPRK(method)                  \
   if constexpr (is_instance_of_v<DecomposableFirstOrderDifferentialEquation, \
+                                 ODE> ||                                     \
+                is_instance_of_v<SpecialSecondOrderDifferentialEquation,     \
                                  ODE>) {                                     \
     return ReadSprkFromMessage<                                              \
         not_null<std::unique_ptr<typename Integrator<ODE>::Instance>>,       \
@@ -504,27 +505,27 @@ void FixedStepSizeIntegrator<ODE_>::Instance::WriteToMessage(
         methods::method::first_same_as_last>(                                \
         extension, problem, append_state, step);                             \
   } else {                                                                   \
-    base::noreturn();                                                        \
+    LOG(FATAL) << "Incorrect ODE for an SPRK: " << extension.DebugString();  \
   }
 
-#define PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_SRKN(method)              \
-  if constexpr (is_instance_of_v<SpecialSecondOrderDifferentialEquation, \
-                                 ODE>) {                                 \
-    auto const& integrator =                                             \
-        SymplecticRungeKuttaNyströmIntegrator<methods::method, ODE>();   \
-    return ReadSrknInstanceFromMessage(                                  \
-        extension, problem, append_state, step, integrator);             \
-  } else {                                                               \
-    base::noreturn();                                                    \
+#define PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_SRKN(method)                 \
+  if constexpr (is_instance_of_v<SpecialSecondOrderDifferentialEquation,    \
+                                 ODE>) {                                    \
+    auto const& integrator =                                                \
+        SymplecticRungeKuttaNyströmIntegrator<methods::method, ODE>();      \
+    return ReadSrknInstanceFromMessage(                                     \
+        extension, problem, append_state, step, integrator);                \
+  } else {                                                                  \
+    LOG(FATAL) << "Incorrect ODE for an SRKN: " << extension.DebugString(); \
   }
 
 template<typename ODE_>
-template<typename, typename>
 not_null<std::unique_ptr<typename Integrator<ODE_>::Instance>>
 FixedStepSizeIntegrator<ODE_>::Instance::ReadFromMessage(
     serialization::IntegratorInstance const& message,
     ODE const& equation,
-    AppendState const& append_state) {
+    AppendState const& append_state)
+  requires serializable<typename ODE_::State> {
   InitialValueProblem<ODE> problem;
   problem.equation = equation;
   problem.initial_state =
@@ -546,7 +547,6 @@ FixedStepSizeIntegrator<ODE_>::Instance::ReadFromMessage(
         PRINCIPIA_READ_FSS_INTEGRATOR_INSTANCE_SRKN)
     default:
       LOG(FATAL) << message.DebugString();
-      base::noreturn();
   }
 }
 
@@ -572,7 +572,7 @@ FixedStepSizeIntegrator<ODE_>::Instance::Instance(
                     ODE>) {                                           \
     return ExplicitLinearMultistepIntegrator<methods::method, ODE>(); \
   } else {                                                            \
-    base::noreturn();                                                 \
+    std::abort();                                                 \
   }
 
 #define PRINCIPIA_READ_FSS_INTEGRATOR_ERK(method)                   \
@@ -581,7 +581,7 @@ FixedStepSizeIntegrator<ODE_>::Instance::Instance(
                     ODE>) {                                         \
     return ExplicitRungeKuttaIntegrator<methods::method, ODE>();    \
   } else {                                                          \
-    base::noreturn();                                               \
+    std::abort();                                               \
   }
 
 #define PRINCIPIA_READ_FSS_INTEGRATOR_SLMS(method)                       \
@@ -589,7 +589,7 @@ FixedStepSizeIntegrator<ODE_>::Instance::Instance(
                                  ODE>) {                                 \
     return SymmetricLinearMultistepIntegrator<methods::method, ODE>();   \
   } else {                                                               \
-    base::noreturn();                                                    \
+    std::abort();                                                    \
   }
 
 #define PRINCIPIA_READ_FSS_INTEGRATOR_SPRK(method)                             \
@@ -602,7 +602,7 @@ FixedStepSizeIntegrator<ODE_>::Instance::Instance(
                                methods::method,                                \
                                methods::method::first_same_as_last>(instance); \
   } else {                                                                     \
-    base::noreturn();                                                          \
+    std::abort();                                                          \
   }
 
 #define PRINCIPIA_READ_FSS_INTEGRATOR_SRKN(method)                        \
@@ -610,7 +610,7 @@ FixedStepSizeIntegrator<ODE_>::Instance::Instance(
                                  ODE>) {                                  \
     return SymplecticRungeKuttaNyströmIntegrator<methods::method, ODE>(); \
   } else {                                                                \
-    base::noreturn();                                                     \
+    std::abort();                                                     \
   }
 
 template<typename ODE_>
@@ -625,7 +625,7 @@ FixedStepSizeIntegrator<ODE_>::ReadFromMessage(
                                    PRINCIPIA_READ_FSS_INTEGRATOR_SRKN)
     default:
       LOG(FATAL) << message.kind();
-      base::noreturn();
+      std::abort();
   }
 }
 
@@ -736,7 +736,7 @@ void AdaptiveStepSizeIntegrator<ODE_>::Instance::WriteToMessage(
                                          first_use,                  \
                                          integrator);                \
   } else {                                                           \
-    base::noreturn();                                                \
+    std::abort();                                                \
   }
 #define PRINCIPIA_READ_ASS_INTEGRATOR_INSTANCE_EERKN(method)                 \
   if constexpr (is_instance_of_v<SpecialSecondOrderDifferentialEquation,     \
@@ -752,18 +752,18 @@ void AdaptiveStepSizeIntegrator<ODE_>::Instance::WriteToMessage(
                                         first_use,                           \
                                         integrator);                         \
   } else {                                                                   \
-    base::noreturn();                                                        \
+    std::abort();                                                        \
   }
 #define PRINCIPIA_READ_ASS_INTEGRATOR_INSTANCE_EERK(method) LOG(FATAL) << "NYI"
 
 template<typename ODE_>
-template<typename, typename>
 not_null<std::unique_ptr<typename Integrator<ODE_>::Instance>>
 AdaptiveStepSizeIntegrator<ODE_>::Instance::ReadFromMessage(
     serialization::IntegratorInstance const& message,
     ODE const& equation,
     AppendState const& append_state,
-    ToleranceToErrorRatio const& tolerance_to_error_ratio) {
+    ToleranceToErrorRatio const& tolerance_to_error_ratio)
+  requires serializable<typename ODE_::State> {
   using Serializer = DoubleOrQuantitySerializer<
       IndependentVariableDifference,
       serialization::AdaptiveStepSizeIntegratorInstance::Step>;
@@ -805,10 +805,10 @@ AdaptiveStepSizeIntegrator<ODE_>::Instance::ReadFromMessage(
         PRINCIPIA_READ_ASS_INTEGRATOR_INSTANCE_EERK)
     default:
       LOG(FATAL) << message.DebugString();
-      base::noreturn();
+      std::abort();
   }
   LOG(FATAL) << message.DebugString();
-  base::noreturn();
+  std::abort();
 }
 
 #undef PRINCIPIA_READ_ASS_INTEGRATOR_INSTANCE_EEGRKN
@@ -841,7 +841,7 @@ AdaptiveStepSizeIntegrator<ODE_>::Instance::Instance(
         methods::method,                                             \
         ODE>();                                                      \
   } else {                                                           \
-    base::noreturn();                                                \
+    std::abort();                                                \
   }
 
 #define PRINCIPIA_READ_ASS_INTEGRATOR_EERKN(method)                      \
@@ -850,7 +850,7 @@ AdaptiveStepSizeIntegrator<ODE_>::Instance::Instance(
     return EmbeddedExplicitRungeKuttaNyströmIntegrator<methods::method,  \
                                                        ODE>();           \
   } else {                                                               \
-    base::noreturn();                                                    \
+    std::abort();                                                    \
   }
 
 #define PRINCIPIA_READ_ASS_INTEGRATOR_EERK(method) LOG(FATAL) << "NYI"
@@ -865,10 +865,10 @@ AdaptiveStepSizeIntegrator<ODE_>::ReadFromMessage(
                                    PRINCIPIA_READ_ASS_INTEGRATOR_EERK)
     default:
       LOG(FATAL) << message.kind();
-      base::noreturn();
+      std::abort();
   }
   LOG(FATAL) << message.kind();
-  base::noreturn();
+  std::abort();
 }
 
 #undef PRINCIPIA_READ_ASS_INTEGRATOR_EEGRKN

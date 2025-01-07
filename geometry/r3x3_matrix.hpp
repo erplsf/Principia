@@ -6,11 +6,11 @@
 #include <type_traits>
 #include <utility>
 
-#include "base/macros.hpp"
+#include "base/not_null.hpp"
 #include "base/tags.hpp"
 #include "geometry/r3_element.hpp"
+#include "quantities/concepts.hpp"
 #include "quantities/named_quantities.hpp"
-#include "quantities/quantities.hpp"
 #include "serialization/geometry.pb.h"
 
 namespace principia {
@@ -21,12 +21,12 @@ namespace internal {
 using namespace principia::base::_not_null;
 using namespace principia::base::_tags;
 using namespace principia::geometry::_r3_element;
+using namespace principia::quantities::_concepts;
 using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_traits;
 
-// An |R3x3Matrix| is an element of the associative algebra of 3-by-3 matrices
-// over |Scalar|.  |Scalar| should be a vector space over ℝ, represented by
-// |double|.
+// An `R3x3Matrix` is an element of the associative algebra of 3-by-3 matrices
+// over `Scalar`.  `Scalar` should be a vector space over ℝ, represented by
+// `double`.
 template<typename Scalar>
 class R3x3Matrix final {
  public:
@@ -35,6 +35,20 @@ class R3x3Matrix final {
   R3x3Matrix(R3Element<Scalar> const& row_x,
              R3Element<Scalar> const& row_y,
              R3Element<Scalar> const& row_z);
+
+  friend bool operator==(R3x3Matrix const& left,
+                         R3x3Matrix const& right) = default;
+  friend bool operator!=(R3x3Matrix const& left,
+                         R3x3Matrix const& right) = default;
+
+  Scalar operator()(int r, int c) const;
+  Scalar& operator()(int r, int c);
+
+  R3x3Matrix& operator+=(R3x3Matrix const& right);
+  R3x3Matrix& operator-=(R3x3Matrix const& right);
+  R3x3Matrix& operator*=(R3x3Matrix const& right);
+  R3x3Matrix& operator*=(double right);
+  R3x3Matrix& operator/=(double right);
 
   static R3x3Matrix DiagonalMatrix(R3Element<Scalar> const& diagonal);
 
@@ -55,15 +69,6 @@ class R3x3Matrix final {
   R3Element<Scalar> const& row_x() const;
   R3Element<Scalar> const& row_y() const;
   R3Element<Scalar> const& row_z() const;
-
-  Scalar operator()(int r, int c) const;
-  Scalar& operator()(int r, int c);
-
-  R3x3Matrix& operator+=(R3x3Matrix const& right);
-  R3x3Matrix& operator-=(R3x3Matrix const& right);
-  R3x3Matrix& operator*=(R3x3Matrix const& right);
-  R3x3Matrix& operator*=(double right);
-  R3x3Matrix& operator/=(double right);
 
   template<typename S = Scalar,
            typename = std::enable_if_t<std::is_same_v<S, double>>>
@@ -106,22 +111,18 @@ class R3x3Matrix final {
   friend R3Element<Product<LS, RS>> operator*(R3Element<LS> const& left,
                                               R3x3Matrix<RS> const& right);
 
-  template<typename LS, typename RS, typename>
+  template<typename LS, typename RS>
+    requires convertible_to_quantity<LS>
   friend R3x3Matrix<Product<LS, RS>> operator*(LS const& left,
                                                R3x3Matrix<RS> const& right);
-  template<typename LS, typename RS, typename>
+  template<typename LS, typename RS>
+    requires convertible_to_quantity<RS>
   friend R3x3Matrix<Product<LS, RS>> operator*(R3x3Matrix<LS> const& left,
                                                RS const& right);
-  template<typename LS, typename RS, typename>
+  template<typename LS, typename RS>
+    requires convertible_to_quantity<RS>
   friend R3x3Matrix<Quotient<LS, RS>> operator/(R3x3Matrix<LS> const& left,
                                                 RS const& right);
-
-  template<typename S>
-  friend bool operator==(R3x3Matrix<S> const& left,
-                         R3x3Matrix<S> const& right);
-  template<typename S>
-  friend bool operator!=(R3x3Matrix<S> const& left,
-                         R3x3Matrix<S> const& right);
 
   template<typename S>
   friend std::string DebugString(R3x3Matrix<S> const& r3x3_matrix);
@@ -154,18 +155,17 @@ R3Element<Product<LScalar, RScalar>> operator*(
     R3Element<LScalar> const& left,
     R3x3Matrix<RScalar> const& right);
 
-template<typename LScalar, typename RScalar,
-         typename = std::enable_if_t<is_quantity_v<LScalar>>>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<LScalar>
 R3x3Matrix<Product<LScalar, RScalar>> operator*(
     LScalar const& left,
     R3x3Matrix<RScalar> const& right);
-template<typename LScalar, typename RScalar,
-         typename = std::enable_if_t<is_quantity_v<LScalar>>>
-R3x3Matrix<Product<LScalar, RScalar>> operator*(
-    R3x3Matrix<LScalar> const& left,
-    RScalar const& right);
-template<typename LScalar, typename RScalar,
-         typename = std::enable_if_t<is_quantity_v<LScalar>>>
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
+R3x3Matrix<Product<LScalar, RScalar>> operator*(R3x3Matrix<LScalar> const& left,
+                                                RScalar const& right);
+template<typename LScalar, typename RScalar>
+  requires convertible_to_quantity<RScalar>
 R3x3Matrix<Quotient<LScalar, RScalar>> operator/(
     R3x3Matrix<LScalar> const& left,
     RScalar const& right);

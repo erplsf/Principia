@@ -5,10 +5,10 @@
 #include <utility>
 #include <vector>
 
-#include "base/traits.hpp"
-#include "geometry/barycentre_calculator.hpp"
-#include "quantities/quantities.hpp"
-#include "quantities/traits.hpp"
+#include "base/concepts.hpp"
+#include "base/not_null.hpp"
+#include "quantities/concepts.hpp"
+#include "quantities/named_quantities.hpp"
 #include "serialization/geometry.pb.h"
 
 namespace principia {
@@ -16,16 +16,18 @@ namespace geometry {
 namespace _point {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_not_null;
-using namespace principia::base::_traits;
+using namespace principia::quantities::_concepts;
 using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_traits;
 
-// Point<Vector> is an affine space on the vector space Vector. Vector should
-// be equipped with operators +, -, +=, -=, ==, !=, as well as Vector * Weight
-// and Vector / Weight for any Weight used in Barycentre.
+// Point<Vector> is an affine space on the vector space Vector.
 template<typename Vector>
 class Point final {
+  // This cannot be a constraint, as it would lead to recursive instantation of
+  // Position, which is used in Frame.
+  static_assert(additive_group<Vector>);
+
  public:
   constexpr Point();
 
@@ -40,6 +42,13 @@ class Point final {
   Point& operator=(Point&& other) = default;
 #endif
 
+  constexpr friend bool operator==(Point const& left,
+                                   Point const& right) = default;
+  constexpr friend bool operator!=(Point const& left,
+                                   Point const& right) = default;
+  constexpr friend auto operator<=>(Point const& left, Point const& right)
+    requires convertible_to_quantity<Vector> = default;
+
   constexpr Vector operator-(Point const& from) const;
 
   constexpr Point operator+(Vector const& translation) const;
@@ -48,13 +57,9 @@ class Point final {
   Point& operator+=(Vector const& translation);
   Point& operator-=(Vector const& translation);
 
-  constexpr bool operator==(Point const& right) const;
-  constexpr bool operator!=(Point const& right) const;
-
   void WriteToMessage(not_null<serialization::Point*> message) const;
-  template<typename V = Vector,
-           typename = std::enable_if_t<is_serializable_v<V>>>
-  static Point ReadFromMessage(serialization::Point const& message);
+  static Point ReadFromMessage(serialization::Point const& message)
+    requires serializable<Vector>;
 
  private:
   // This constructor allows for C++11 functional constexpr operators, and
@@ -75,30 +80,14 @@ class Point final {
       L const& a, R const& b, Point<Product<L, R>> const& c);
 
   template<typename V>
-  friend constexpr typename std::enable_if_t<is_quantity_v<V>, bool>
-  operator<(Point<V> const& left, Point<V> const& right);
+    requires convertible_to_quantity<V>
+  friend constexpr Point<V> NextUp(Point<V> x);
   template<typename V>
-  friend constexpr typename std::enable_if_t<is_quantity_v<V>, bool>
-  operator<=(Point<V> const& left, Point<V> const& right);
-  template<typename V>
-  friend constexpr typename std::enable_if_t<is_quantity_v<V>, bool>
-  operator>=(Point<V> const& left, Point<V> const& right);
-  template<typename V>
-  friend constexpr typename std::enable_if_t<is_quantity_v<V>, bool>
-  operator>(Point<V> const& left, Point<V> const& right);
-
-  template<typename V>
-  friend constexpr typename std::enable_if_t<is_quantity_v<V>, Point<V>>
-  NextUp(Point<V> x);
-  template<typename V>
-  friend constexpr typename std::enable_if_t<is_quantity_v<V>, Point<V>>
-  NextDown(Point<V> x);
+    requires convertible_to_quantity<V>
+  friend constexpr Point<V> NextDown(Point<V> x);
 
   template<typename V>
   friend std::string DebugString(Point<V> const& point);
-
-  template<typename V, typename S>
-  friend class _barycentre_calculator::BarycentreCalculator;
 };
 
 template<typename Vector>
@@ -115,27 +104,11 @@ Point<Product<L, R>> FusedNegatedMultiplyAdd(L const& a,
                                              Point<Product<L, R>> const& c);
 
 template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool>
-operator<(Point<Vector> const& left, Point<Vector> const& right);
-
+  requires convertible_to_quantity<Vector>
+constexpr Point<Vector> NextUp(Point<Vector> x);
 template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool>
-operator<=(Point<Vector> const& left, Point<Vector> const& right);
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool>
-operator>=(Point<Vector> const& left, Point<Vector> const& right);
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, bool>
-operator>(Point<Vector> const& left, Point<Vector> const& right);
-
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, Point<Vector>>
-NextUp(Point<Vector> x);
-template<typename Vector>
-constexpr typename std::enable_if_t<is_quantity_v<Vector>, Point<Vector>>
-NextDown(Point<Vector> x);
+  requires convertible_to_quantity<Vector>
+constexpr Point<Vector> NextDown(Point<Vector> x);
 
 template<typename Vector>
 std::string DebugString(Point<Vector> const& point);
@@ -148,33 +121,6 @@ std::ostream& operator<<(std::ostream& out, Point<Vector> const& point);
 using internal::Point;
 
 }  // namespace _point
-
-// Specialize BarycentreCalculator to make it applicable to Points.
-namespace _barycentre_calculator {
-namespace internal {
-
-using namespace principia::geometry::_point;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_traits;
-
-template<typename Vector, typename Weight>
-class BarycentreCalculator<Point<Vector>, Weight> final {
- public:
-  BarycentreCalculator() = default;
-
-  void Add(Point<Vector> const& point, Weight const& weight);
-  Point<Vector> Get() const;
-
-  Weight const& weight() const;
-
- private:
-  bool empty_ = true;
-  Product<Vector, Weight> weighted_sum_;
-  Weight weight_;
-};
-
-}  // namespace internal
-}  // namespace _barycentre_calculator
 }  // namespace geometry
 }  // namespace principia
 

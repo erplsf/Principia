@@ -1,6 +1,7 @@
 #include "ksp_plugin/interface.hpp"
 
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -11,23 +12,36 @@
 #include "base/pull_serializer.hpp"
 #include "base/push_deserializer.hpp"
 #include "base/serialization.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
+#include "geometry/orthogonal_map.hpp"
+#include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
-#include "google/protobuf/text_format.h"
 #include "gmock/gmock.h"
+#include "google/protobuf/text_format.h"
 #include "gtest/gtest.h"
 #include "journal/recorder.hpp"
 #include "ksp_plugin/frames.hpp"
 #include "ksp_plugin/identification.hpp"
-#include "ksp_plugin_test/mock_manœuvre.hpp"
-#include "ksp_plugin_test/mock_plugin.hpp"
-#include "ksp_plugin_test/mock_renderer.hpp"
-#include "ksp_plugin_test/mock_vessel.hpp"
-#include "physics/mock_rigid_reference_frame.hpp"
+#include "ksp_plugin/manœuvre.hpp"
+#include "ksp_plugin/part.hpp"
+#include "ksp_plugin/plugin.hpp"
+#include "ksp_plugin/renderer.hpp"
+#include "ksp_plugin/vessel.hpp"
+#include "ksp_plugin_test/mock_plugin.hpp"  // 🧙 For MockPlugin.
+#include "ksp_plugin_test/mock_renderer.hpp"  // 🧙 For MockRenderer.
+#include "physics/degrees_of_freedom.hpp"
+#include "physics/frame_field.hpp"
+#include "physics/massive_body.hpp"
+#include "physics/mock_rigid_reference_frame.hpp"  // 🧙 For MockRigidReferenceFrame.  // NOLINT
+#include "physics/rigid_motion.hpp"
+#include "physics/rigid_reference_frame.hpp"
 #include "quantities/astronomy.hpp"
 #include "quantities/constants.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
-#include "testing_utilities/almost_equals.hpp"
 #include "testing_utilities/matchers.hpp"
 #include "testing_utilities/serialization.hpp"
 
@@ -83,7 +97,6 @@ using namespace principia::quantities::_elementary_functions;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
-using namespace principia::testing_utilities::_almost_equals;
 using namespace principia::testing_utilities::_matchers;
 using namespace principia::testing_utilities::_serialization;
 
@@ -129,6 +142,7 @@ class InterfaceTest : public testing::Test {
         serialized_simple_plugin_(ReadFromBinaryFile(
             SOLUTION_DIR / "ksp_plugin_test" / "simple_plugin.proto.bin")) {}
 
+  MockRenderer renderer_;
   not_null<std::unique_ptr<StrictMock<MockPlugin>>> plugin_;
   std::string const hexadecimal_simple_plugin_;
   std::vector<std::uint8_t> const serialized_simple_plugin_;
@@ -509,14 +523,15 @@ TEST_F(InterfaceTest, CelestialFromParent) {
 }
 
 TEST_F(InterfaceTest, NewNavigationFrame) {
-  MockRenderer renderer;
-  EXPECT_CALL(*plugin_, renderer()).WillRepeatedly(ReturnRef(renderer));
+  EXPECT_CALL(*plugin_, renderer()).WillRepeatedly(ReturnRef(renderer_));
 
+  int const* const celestial_index_array[2] = {&celestial_index, nullptr};
+  int const* const parent_index_array[2] = {&parent_index, nullptr};
   PlottingFrameParameters parameters = {
       serialization::BarycentricRotatingReferenceFrame::kExtensionFieldNumber,
       unused,
-      celestial_index,
-      parent_index};
+      &celestial_index_array[0],
+      &parent_index_array[0]};
   {
     StrictMock<MockRigidReferenceFrame<Barycentric, Navigation>>* const
         mock_navigation_frame =
@@ -528,7 +543,7 @@ TEST_F(InterfaceTest, NewNavigationFrame) {
             std::unique_ptr<
                 StrictMock<MockRigidReferenceFrame<Barycentric, Navigation>>>(
                 mock_navigation_frame))));
-    EXPECT_CALL(renderer, SetPlottingFrame(Pointer(mock_navigation_frame)));
+    EXPECT_CALL(renderer_, SetPlottingFrame(Pointer(mock_navigation_frame)));
     principia__SetPlottingFrame(plugin_.get(), parameters);
   }
 
@@ -545,7 +560,7 @@ TEST_F(InterfaceTest, NewNavigationFrame) {
             std::unique_ptr<
                 StrictMock<MockRigidReferenceFrame<Barycentric, Navigation>>>(
                 mock_navigation_frame))));
-    EXPECT_CALL(renderer, SetPlottingFrame(Pointer(mock_navigation_frame)));
+    EXPECT_CALL(renderer_, SetPlottingFrame(Pointer(mock_navigation_frame)));
     principia__SetPlottingFrame(plugin_.get(), parameters);
   }
 }
@@ -561,15 +576,16 @@ TEST_F(InterfaceTest, NavballOrientation) {
           ByMove(std::unique_ptr<
                  StrictMock<MockRigidReferenceFrame<Barycentric, Navigation>>>(
               mock_navigation_frame))));
+  int const* const celestial_index_array[2] = {&celestial_index, nullptr};
+  int const* const parent_index_array[2] = {&parent_index, nullptr};
   PlottingFrameParameters parameters = {
       serialization::BarycentricRotatingReferenceFrame::kExtensionFieldNumber,
       unused,
-      celestial_index,
-      parent_index};
+      &celestial_index_array[0],
+      &parent_index_array[0]};
 
-  MockRenderer renderer;
-  EXPECT_CALL(*plugin_, renderer()).WillRepeatedly(ReturnRef(renderer));
-  EXPECT_CALL(renderer, SetPlottingFrame(Pointer(mock_navigation_frame)));
+  EXPECT_CALL(*plugin_, renderer()).WillRepeatedly(ReturnRef(renderer_));
+  EXPECT_CALL(renderer_, SetPlottingFrame(Pointer(mock_navigation_frame)));
   principia__SetPlottingFrame(plugin_.get(), parameters);
 
   Position<World> sun_position =

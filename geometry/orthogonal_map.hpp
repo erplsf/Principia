@@ -1,40 +1,46 @@
 #pragma once
 
+#include "base/concepts.hpp"
 #include "base/mappable.hpp"
+#include "base/not_null.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/grassmann.hpp"
 #include "geometry/linear_map.hpp"
 #include "geometry/quaternion.hpp"
-#include "geometry/r3_element.hpp"
 #include "geometry/sign.hpp"
 #include "serialization/geometry.pb.h"
 
 namespace principia {
 namespace geometry {
 
-FORWARD_DECLARE_FROM(conformal_map,
-                     TEMPLATE(typename Scalar,
-                              typename FromFrame,
-                              typename ToFrame) class,
-                     ConformalMap);
-FORWARD_DECLARE_FROM(identity,
-                     TEMPLATE(typename FromFrame, typename ToFrame) class,
-                     Identity);
-FORWARD_DECLARE_FROM(permutation,
-                     TEMPLATE(typename FromFrame, typename ToFrame) class,
-                     Permutation);
-FORWARD_DECLARE_FROM(rotation,
-                     TEMPLATE(typename FromFrame, typename ToFrame) class,
-                     Rotation);
-FORWARD_DECLARE_FROM(signature,
-                     TEMPLATE(typename FromFrame, typename ToFrame) class,
-                     Signature);
-FORWARD_DECLARE_FROM(
-    symmetric_bilinear_form,
+FORWARD_DECLARE(TEMPLATE(typename Scalar,
+                         typename FromFrame,
+                         typename ToFrame) class,
+                ConformalMap,
+                FROM(conformal_map));
+FORWARD_DECLARE(TEMPLATE(typename FromFrame, typename ToFrame) class,
+                Identity,
+                FROM(identity),
+                INTO(orthogonal_map));
+FORWARD_DECLARE(TEMPLATE(typename FromFrame, typename ToFrame) class,
+                Permutation,
+                FROM(permutation),
+                INTO(orthogonal_map));
+FORWARD_DECLARE(TEMPLATE(typename FromFrame, typename ToFrame) class,
+                Rotation,
+                FROM(rotation),
+                INTO(orthogonal_map));
+FORWARD_DECLARE(TEMPLATE(typename FromFrame, typename ToFrame) class,
+                Signature,
+                FROM(signature),
+                INTO(orthogonal_map));
+FORWARD_DECLARE(
     TEMPLATE(typename Scalar,
-            typename Frame,
-            template<typename, typename> typename Multivector) class,
-    SymmetricBilinearForm);
+             typename Frame,
+             template<typename, typename> typename Multivector) class,
+    SymmetricBilinearForm,
+    FROM(symmetric_bilinear_form),
+    INTO(orthogonal_map));
 
 class ConformalMapTest;
 class OrthogonalMapTest;
@@ -42,22 +48,17 @@ class OrthogonalMapTest;
 namespace _orthogonal_map {
 namespace internal {
 
+using namespace principia::base::_concepts;
 using namespace principia::base::_mappable;
 using namespace principia::base::_not_null;
-using namespace principia::base::_traits;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_identity;
 using namespace principia::geometry::_linear_map;
-using namespace principia::geometry::_permutation;
 using namespace principia::geometry::_quaternion;
-using namespace principia::geometry::_rotation;
 using namespace principia::geometry::_sign;
-using namespace principia::geometry::_signature;
-using namespace principia::geometry::_symmetric_bilinear_form;
 
-// An orthogonal map between the inner product spaces |FromFrame| and
-// |ToFrame|, as well as the induced maps on the exterior algebra.
+// An orthogonal map between the inner product spaces `FromFrame` and
+// `ToFrame`, as well as the induced maps on the exterior algebra.
 // The orthogonal map is modeled as a rotoinversion.
 template<typename FromFrame, typename ToFrame>
 class OrthogonalMap : public LinearMap<OrthogonalMap<FromFrame, ToFrame>,
@@ -103,19 +104,13 @@ class OrthogonalMap : public LinearMap<OrthogonalMap<FromFrame, ToFrame>,
   static OrthogonalMap Identity();
 
   void WriteToMessage(not_null<serialization::LinearMap*> message) const;
-  template<typename F = FromFrame,
-           typename T = ToFrame,
-           typename = std::enable_if_t<is_serializable_v<F> &&
-                                       is_serializable_v<T>>>
-  static OrthogonalMap ReadFromMessage(serialization::LinearMap const& message);
+  static OrthogonalMap ReadFromMessage(serialization::LinearMap const& message)
+    requires serializable<FromFrame> && serializable<ToFrame>;
 
   void WriteToMessage(not_null<serialization::OrthogonalMap*> message) const;
-  template<typename F = FromFrame,
-           typename T = ToFrame,
-           typename = std::enable_if_t<is_serializable_v<F> &&
-                                       is_serializable_v<T>>>
   static OrthogonalMap ReadFromMessage(
-      serialization::OrthogonalMap const& message);
+      serialization::OrthogonalMap const& message)
+    requires serializable<FromFrame> && serializable<ToFrame>;
 
  private:
   explicit OrthogonalMap(Quaternion const& quaternion);

@@ -4,6 +4,7 @@
 
 #include "astronomy/date_time.hpp"
 #include "geometry/instant.hpp"
+#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace astronomy {
@@ -30,7 +31,7 @@ constexpr Angle EarthRotationAngle(Instant tt);
 // — Temps Terrestre;
 // — Coordinated Universal Time;
 // — Universal Time (UT1).
-// |Instant| represents TT; note that the conversion from TAI, UTC, and UT1
+// `Instant` represents TT; note that the conversion from TAI, UTC, and UT1
 // converts to TT(TAI), not TT(BIPM); this may cause issues where long-term
 // frequency stability and high frequency accuracy are needed, see
 // https://www.bipm.org/en/bipm-services/timescales/time-ftp/ttbipm.html.

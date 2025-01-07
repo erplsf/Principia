@@ -8,14 +8,11 @@
 #include <vector>
 
 #include "base/tags.hpp"
-#include "geometry/grassmann.hpp"
 #include "geometry/r3_element.hpp"
 #include "numerics/fixed_arrays.hpp"
 #include "numerics/legendre_normalization_factor.mathematica.h"
 #include "numerics/max_abs_normalized_associated_legendre_function.mathematica.h"
-#include "numerics/polynomial_evaluators.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace physics {
@@ -23,21 +20,17 @@ namespace _geopotential {
 namespace internal {
 
 using namespace principia::base::_tags;
-using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_r3_element;
 using namespace principia::numerics::_fixed_arrays;
 using namespace principia::numerics::_legendre_normalization_factor;
 using namespace principia::numerics::_max_abs_normalized_associated_legendre_function;  // NOLINT
-using namespace principia::numerics::_polynomial_evaluators;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
 
 // The notation in this file follows documentation/Geopotential.pdf.
 
 template<typename Frame>
 struct Geopotential<Frame>::Precomputations {
-  // Allocate the maximum size to cover all possible degrees.  Making |size| a
+  // Allocate the maximum size to cover all possible degrees.  Making `size` a
   // template parameter of this class would be possible, but it would greatly
   // increase the number of instances of DegreeNOrderM and friends.
   static constexpr int size = OblateBody<Frame>::max_geopotential_degree + 1;
@@ -689,8 +682,8 @@ Geopotential<Frame>::Geopotential(not_null<OblateBody<Frame> const*> body,
     int n;
     int m;
   };
-  // If |after(left, right)|, |left| is popped after |right| in the
-  // |priority_queue|.
+  // If `after(left, right)`, `left` is popped after `right` in the
+  // `priority_queue`.
   auto const after = [](Threshold const& left, Threshold const& right) -> bool {
     return left.r < right.r ||
            (left.r == right.r &&
@@ -754,10 +747,10 @@ Geopotential<Frame>::GeneralSphericalHarmonicsAcceleration(
     Exponentiation<Length, -3> const& one_over_r³) const {
   if (r_norm != r_norm) {
     // Short-circuit NaN, to avoid having to deal with an unordered
-    // |r_norm| when finding the partition point below.
+    // `r_norm` when finding the partition point below.
     return NaN<ReducedAcceleration> * Vector<double, Frame>{};
   }
-  // We have |max_degree > 0|.
+  // We have `max_degree > 0`.
   int const max_degree = LimitingDegree(r_norm) - 1;
   switch (max_degree) {
     PRINCIPIA_CASE_SPHERICAL_HARMONICS_ACCELERATION(2);
@@ -815,7 +808,7 @@ Geopotential<Frame>::GeneralSphericalHarmonicsAcceleration(
       return Vector<ReducedAcceleration, Frame>{};
     default:
       LOG(FATAL) << "Unexpected degree " << max_degree << " " << body_->name();
-      base::noreturn();
+      std::abort();
   }
 }
 
@@ -836,10 +829,10 @@ Geopotential<Frame>::GeneralSphericalHarmonicsPotential(
     Exponentiation<Length, -3> const& one_over_r³) const {
   if (r_norm != r_norm) {
     // Short-circuit NaN, to avoid having to deal with an unordered
-    // |r_norm| when finding the partition point below.
+    // `r_norm` when finding the partition point below.
     return NaN<ReducedPotential>;
   }
-  // We have |max_degree > 0|.
+  // We have `max_degree > 0`.
   int const max_degree = LimitingDegree(r_norm) - 1;
   switch (max_degree) {
     PRINCIPIA_CASE_SPHERICAL_HARMONICS_POTENTIAL(2);
@@ -897,7 +890,7 @@ Geopotential<Frame>::GeneralSphericalHarmonicsPotential(
       return ReducedPotential{};
     default:
       LOG(FATAL) << "Unexpected degree " << max_degree << " " << body_->name();
-      base::noreturn();
+      std::abort();
   }
 }
 
@@ -916,6 +909,9 @@ HarmonicDamping const& Geopotential<Frame>::sectoral_damping() const {
 
 template<typename Frame>
 int Geopotential<Frame>::LimitingDegree(Length const& r_norm) const {
+  if (!IsFinite(r_norm)) {
+    return 2;
+  }
   return std::partition_point(
              degree_damping_.begin(),
              degree_damping_.end(),

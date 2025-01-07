@@ -3,18 +3,22 @@
 #include "astronomy/orbital_elements.hpp"
 
 #include <algorithm>
-#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
 #include "base/jthread.hpp"
-#include "base/status_utilities.hpp"
-#include "numerics/quadrature.hpp"
+#include "base/status_utilities.hpp"  // 🧙 For RETURN_IF_ERROR.
 #include "integrators/embedded_explicit_runge_kutta_integrator.hpp"
+#include "integrators/integrators.hpp"
 #include "integrators/methods.hpp"
-#include "physics/discrete_trajectory.hpp"
+#include "integrators/ordinary_differential_equations.hpp"
+#include "numerics/angle_reduction.hpp"
+#include "numerics/quadrature.hpp"
+#include "physics/degrees_of_freedom.hpp"
 #include "physics/kepler_orbit.hpp"
 #include "quantities/elementary_functions.hpp"
+#include "quantities/si.hpp"
 
 namespace principia {
 namespace astronomy {
@@ -26,12 +30,11 @@ using namespace principia::integrators::_embedded_explicit_runge_kutta_integrato
 using namespace principia::integrators::_integrators;
 using namespace principia::integrators::_methods;
 using namespace principia::integrators::_ordinary_differential_equations;
+using namespace principia::numerics::_angle_reduction;
 using namespace principia::numerics::_quadrature;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::physics::_kepler_orbit;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
 using namespace principia::quantities::_si;
 
 constexpr int osculating_equinoctial_elements_per_sidereal_period = 256;
@@ -209,8 +212,8 @@ absl::StatusOr<OrbitalElements> OrbitalElements::ForRelativeDegreesOfFreedom(
     Angle const& Ω = elements.longitude_of_ascending_node;
     Angle const& M = *elements.mean_anomaly;
     Angle const& i = elements.inclination;
-    double const tg_½i = Tan(i / 2);
-    double const cotg_½i = 1 / tg_½i;
+    double const tg_iⳆ2 = Tan(i / 2);
+    double const cotg_iⳆ2 = 1 / tg_iⳆ2;
     double const sin_Ω = Sin(Ω);
     double const cos_Ω = Cos(Ω);
     return {.t = time,
@@ -219,10 +222,10 @@ absl::StatusOr<OrbitalElements> OrbitalElements::ForRelativeDegreesOfFreedom(
             .k = e * Cos(ϖ),
             .λ = UnwindFrom(
                 unwound_λs[(time - t_min) / third_of_estimated_period], ϖ + M),
-            .p = tg_½i * sin_Ω,
-            .q = tg_½i * cos_Ω,
-            .pʹ = cotg_½i * sin_Ω,
-            .qʹ = cotg_½i * cos_Ω};
+            .p = tg_iⳆ2 * sin_Ω,
+            .q = tg_iⳆ2 * cos_Ω,
+            .pʹ = cotg_iⳆ2 * sin_Ω,
+            .qʹ = cotg_iⳆ2 * cos_Ω};
   };
 
   auto const sidereal_period =
@@ -299,11 +302,11 @@ OrbitalElements::MeanEquinoctialElements(
     Instant const& t_min,
     Instant const& t_max,
     Time const& period) {
-  // This function averages the elements in |osculating| over |period|.  For
-  // each |mean_elements| in the result, for all э in the set of equinoctial
-  // elements {a, h, k, λ, p, q, pʹ, qʹ}, |mean_elements.э| is the integral of
-  // the osculating э from |mean_elements.t - period / 2| to
-  // |mean_elements.t + period / 2|, divided by |period|.
+  // This function averages the elements in `osculating` over `period`.  For
+  // each `mean_elements` in the result, for all э in the set of equinoctial
+  // elements {a, h, k, λ, p, q, pʹ, qʹ}, `mean_elements.э` is the integral of
+  // the osculating э from `mean_elements.t - period / 2` to
+  // `mean_elements.t + period / 2`, divided by `period`.
 
   // We integrate the function (э(t + period / 2) - э(t - period / 2)) / period
   // using as the initial value an integral obtained by Clenshaw-Curtis.
@@ -354,11 +357,25 @@ OrbitalElements::MeanEquinoctialElements(
   };
 
   auto const tolerance_to_error_ratio =
-      [](Time const& step,
+      [period](Time const& step,
          ODE::State const& state,
          ODE::State::Error const& error) -> double {
+    // When the trajectory is very regular, the integrator is "too good" at
+    // approximating it, which causes the output of the integration to be very
+    // sparse, to the point where it confuses unwinding (because we have more
+    // than half a revolution between points).  To avoid this we reduce the
+    // tolerance-to-error ratio exponentially above 1/3 of the period.  For a
+    // step of `period / 2`, the reduction is e^-3.
+    double braking_factor = 1.0;
+    if (3 * step >= period) {
+      braking_factor = std::exp(6 - 18 * step / period);
+    }
+
+    // The braking factor can be very small (even 0) for large steps.  In that
+    // case we want to reject the step, but not drive it all the way to 0,
+    // hence the `std::max`.
     auto const& [Δa, Δh, Δk, Δλ, Δp, Δq, Δpʹ, Δqʹ] = error;
-    return eerk_a_tolerance / Abs(Δa);
+    return std::max(0.5, braking_factor * eerk_a_tolerance / Abs(Δa));
   };
 
   auto const initial_integration =
@@ -436,12 +453,12 @@ OrbitalElements::ToClassicalElements(
   classical_elements.reserve(equinoctial_elements.size());
   for (auto const& equinoctial : equinoctial_elements) {
     RETURN_IF_STOPPED;
-    double const tg_½i = Sqrt(Pow<2>(equinoctial.p) + Pow<2>(equinoctial.q));
-    double const cotg_½i =
+    double const tg_iⳆ2 = Sqrt(Pow<2>(equinoctial.p) + Pow<2>(equinoctial.q));
+    double const cotg_iⳆ2 =
         Sqrt(Pow<2>(equinoctial.pʹ) + Pow<2>(equinoctial.qʹ));
     Angle const i =
-        cotg_½i > tg_½i ? 2 * ArcTan(tg_½i) : 2 * ArcTan(1 / cotg_½i);
-    Angle const Ω = cotg_½i > tg_½i ? ArcTan(equinoctial.p, equinoctial.q)
+        cotg_iⳆ2 > tg_iⳆ2 ? 2 * ArcTan(tg_iⳆ2) : 2 * ArcTan(1 / cotg_iⳆ2);
+    Angle const Ω = cotg_iⳆ2 > tg_iⳆ2 ? ArcTan(equinoctial.p, equinoctial.q)
                                     : ArcTan(equinoctial.pʹ, equinoctial.qʹ);
     double const e = Sqrt(Pow<2>(equinoctial.h) + Pow<2>(equinoctial.k));
     Angle const ϖ = ArcTan(equinoctial.h, equinoctial.k);
@@ -453,14 +470,14 @@ OrbitalElements::ToClassicalElements(
          .eccentricity = e,
          .inclination = i,
          .longitude_of_ascending_node = classical_elements.empty()
-             ? Mod(Ω, 2 * π * Radian)
+             ? ReduceAngle<0, 2 * π>(Ω)
              : UnwindFrom(classical_elements.back().longitude_of_ascending_node,
                           Ω),
          .argument_of_periapsis = classical_elements.empty()
-             ? Mod(ω, 2 * π * Radian)
+             ? ReduceAngle<0, 2 * π>(ω)
              : UnwindFrom(classical_elements.back().argument_of_periapsis, ω),
          .mean_anomaly = classical_elements.empty()
-             ? Mod(M, 2 * π * Radian)
+             ? ReduceAngle<0, 2 * π>(M)
              : UnwindFrom(classical_elements.back().mean_anomaly, M),
          .periapsis_distance = (1 - e) * equinoctial.a,
          .apoapsis_distance = (1 + e) * equinoctial.a});
@@ -547,6 +564,12 @@ inline absl::Status OrbitalElements::ComputePeriodsAndPrecession() {
   anomalistic_period_ = 2 * π * Radian * Δt³ / (12 * ʃ_Mt_dt);
   nodal_period_ = 2 * π * Radian * Δt³ / (12 * ʃ_ut_dt);
   nodal_precession_ = 12 * ʃ_Ωt_dt / Δt³;
+
+  LOG_IF(ERROR, anomalistic_period_ <= 0 * Second)
+      << "Incorrect anomalistic period " << anomalistic_period_;
+  LOG_IF(ERROR, nodal_period_ <= 0 * Second)
+      << "Incorrect nodal period " << nodal_period_;
+
   return absl::OkStatus();
 }
 

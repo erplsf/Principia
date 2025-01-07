@@ -6,15 +6,14 @@
 #include <optional>
 #include <set>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "geometry/barycentre_calculator.hpp"
-#include "geometry/grassmann.hpp"
-#include "geometry/instant.hpp"
 #include "numerics/double_precision.hpp"
 #include "numerics/gradient_descent.hpp"
+#include "numerics/root_finders.hpp"
 #include "quantities/elementary_functions.hpp"
-#include "quantities/si.hpp"
 
 namespace principia {
 namespace physics {
@@ -25,16 +24,10 @@ using ::std::placeholders::_1;
 using ::std::placeholders::_2;
 using ::std::placeholders::_3;
 using namespace principia::geometry::_barycentre_calculator;
-using namespace principia::geometry::_grassmann;
-using namespace principia::geometry::_instant;
-using namespace principia::integrators::_ordinary_differential_equations;
 using namespace principia::numerics::_double_precision;
 using namespace principia::numerics::_gradient_descent;
 using namespace principia::numerics::_root_finders;
 using namespace principia::quantities::_elementary_functions;
-using namespace principia::quantities::_named_quantities;
-using namespace principia::quantities::_quantities;
-using namespace principia::quantities::_si;
 
 // If the potential is below the total energy by this factor, return an empty
 // equipotential line.
@@ -73,11 +66,20 @@ auto Equipotential<InertialFrame, Frame>::ComputeLine(
 
   Line equipotential;
   typename AdaptiveStepSizeIntegrator<ODE>::AppendState const append_state =
-      [&equipotential](State const& state) {
-        DependentVariables dependent_variables;
-        std::get<0>(dependent_variables) = std::get<0>(state.y).value;
-        std::get<1>(dependent_variables) = std::get<1>(state.y).value;
-        equipotential.push_back(dependent_variables);
+      [this, &equipotential, binormal, position, t](State const& state) {
+        auto const& [double_q, double_β] = state.y;
+        DependentVariables values;
+        auto& [q, β] = values;
+        q = double_q.value;
+        β = double_β.value;
+        DependentVariableDerivatives derivatives;
+        RightHandSide(binormal, position, t, state.s.value, values, derivatives)
+            .IgnoreError();
+        auto const& [qʹ, βʹ] = derivatives;
+        CHECK_OK(equipotential.Append(
+            Instant() +
+                state.s.value * reinterpret_independent_variable_as_time,
+            {q, qʹ / reinterpret_independent_variable_as_time}));
       };
 
   auto const tolerance_to_error_ratio =
@@ -91,108 +93,6 @@ auto Equipotential<InertialFrame, Frame>::ComputeLine(
 }
 
 template<typename InertialFrame, typename Frame>
-auto Equipotential<InertialFrame, Frame>::ComputeLine(
-    Plane<Frame> const& plane,
-    Instant const& t,
-    DegreesOfFreedom<Frame> const& degrees_of_freedom) const -> Line {
-  // Compute the total (specific) energy.
-  auto const potential_energy =
-      reference_frame_->GeometricPotential(t, degrees_of_freedom.position());
-  auto const kinetic_energy = 0.5 * degrees_of_freedom.velocity().Norm²();
-  auto const total_energy = potential_energy + kinetic_energy;
-
-  return ComputeLine(plane, t, degrees_of_freedom.position(), total_energy);
-}
-
-template<typename InertialFrame, typename Frame>
-auto Equipotential<InertialFrame, Frame>::ComputeLine(
-    Plane<Frame> const& plane,
-    Instant const& t,
-    Position<Frame> const& start_position,
-    SpecificEnergy const& total_energy) const -> Line {
-  auto const lines = ComputeLines(plane, t, {start_position}, total_energy);
-  CHECK_EQ(1, lines.size());
-  return lines[0];
-}
-
-template<typename InertialFrame, typename Frame>
-auto Equipotential<InertialFrame, Frame>::ComputeLines(
-    Plane<Frame> const& plane,
-    Instant const& t,
-    std::vector<Position<Frame>> const& start_positions,
-    SpecificEnergy const& total_energy) const -> Lines {
-  // The function on which we perform gradient descent is defined to have a
-  // minimum at a position where the potential is equal to the total energy.
-  auto const f = [this, t, total_energy](Position<Frame> const& position) {
-    return Pow<2>(reference_frame_->GeometricPotential(t, position) -
-                  total_energy);
-  };
-
-  auto const grad_f = [this, &plane, t, total_energy](
-      Position<Frame> const& position) {
-    // To keep the problem bidimensional we eliminate any off-plane component of
-    // the gradient.
-    return Projection(
-        -2 *
-            (reference_frame_->GeometricPotential(t, position) - total_energy) *
-            reference_frame_->RotationFreeGeometricAccelerationAtRest(t,
-                                                                      position),
-        plane);
-  };
-
-  Lines lines;
-  for (auto const& start_position : start_positions) {
-    // Compute the winding number of every line already found with respect to
-    // |start_position|.  If any line "turns around" that position, we don't
-    // need to compute a new equipotential, it would just duplicate one we
-    // already have.
-    bool must_compute_line = true;
-    for (auto const& line : lines) {
-      std::vector<Position<Frame>> positions;
-      for (auto const& dependent_variables : line) {
-        auto const& [position, _] = dependent_variables;
-        positions.push_back(position);
-      }
-      std::int64_t const winding_number =
-          WindingNumber(plane, start_position, positions);
-      if (winding_number > 0) {
-        must_compute_line = false;
-        break;
-      }
-    }
-    if (!must_compute_line) {
-      continue;
-    }
-
-    // Do the gradient descent to find a point on the equipotential having the
-    // total energy.
-    // NOTE(phl): Unclear if |length_integration_tolerance| is the right thing
-    // to use below.
-    auto const equipotential_position =
-        BroydenFletcherGoldfarbShanno<Square<SpecificEnergy>, Position<Frame>>(
-            start_position,
-            f,
-            grad_f,
-            adaptive_parameters_.length_integration_tolerance());
-    CHECK(equipotential_position.has_value());
-
-    // The BFGS algorithm will put us at the minimum of f, but that may be a
-    // point that has (significantly) less energy that our total energy.  No
-    // point in building a line in that case.
-    if (reference_frame_->GeometricPotential(t,
-                                             equipotential_position.value()) <
-        total_energy - Abs(total_energy) * energy_tolerance) {
-      lines.push_back(Line{});
-      continue;
-    }
-    // Compute that equipotential.
-    lines.push_back(ComputeLine(plane, t, equipotential_position.value()));
-  }
-
-  return lines;
-}
-
-template<typename InertialFrame, typename Frame>
 auto Equipotential<InertialFrame, Frame>::ComputeLines(
     Plane<Frame> const& plane,
     Instant const& t,
@@ -201,9 +101,8 @@ auto Equipotential<InertialFrame, Frame>::ComputeLines(
     std::function<Position<Frame>(Position<Frame>)> towards_infinity,
     SpecificEnergy const& energy) const -> Lines {
   using WellIterator = typename std::vector<Well>::const_iterator;
-  LOG(ERROR) << "V=" << energy;
 
-  // A |PeakDelineation| represents:
+  // A `PeakDelineation` represents:
   // 1. the set of wells that are not yet delineated from a peak by
   //    equipotentials already computed;
   // 2. whether the well is delineated from the “well at infinity”.
@@ -212,7 +111,7 @@ auto Equipotential<InertialFrame, Frame>::ComputeLines(
     bool delineated_from_infinity = false;
   };
 
-  // |peak_delineations[i]| corresponds to |peaks[i]|.
+  // `peak_delineations[i]` corresponds to `peaks[i]`.
   std::vector<PeakDelineation> peak_delineations(peaks.size());
   for (auto& delineation : peak_delineations) {
     for (auto it = wells.begin(); it != wells.end(); ++it) {
@@ -225,7 +124,7 @@ auto Equipotential<InertialFrame, Frame>::ComputeLines(
     auto const& delineation = peak_delineations[i];
     Position<Frame> const& peak = peaks[i];
 
-    // Ignore |peak| if it is below |energy|.
+    // Ignore `peak` if it is below `energy`.
     if (reference_frame_->GeometricPotential(t, peak) < energy) {
       continue;
     }
@@ -235,14 +134,14 @@ auto Equipotential<InertialFrame, Frame>::ComputeLines(
       std::optional<WellIterator> expected_delineated_well;
       bool expect_delineation_from_infinity = false;
       if (!delineation.indistinct_wells.empty()) {
-        // Try to delineate |peak| from the first of its |indistinct_wells|.
+        // Try to delineate `peak` from the first of its `indistinct_wells`.
         expected_delineated_well = *delineation.indistinct_wells.begin();
         Well const well = **expected_delineated_well;
         Length const r = (peak - well.position).Norm();
         if (reference_frame_->GeometricPotential(
                 t,
-                Barycentre(std::pair(peak, well.position),
-                           std::pair(well.radius, r - well.radius))) >=
+                Barycentre({peak, well.position},
+                           {well.radius, r - well.radius})) >=
             energy) {
           // The point at the edge of the well in the direction of the peak is
           // above the energy; this should not happen (the edge of the well
@@ -260,18 +159,16 @@ auto Equipotential<InertialFrame, Frame>::ComputeLines(
         Length const x = Brent(
             [&](Length const& x) {
               return reference_frame_->GeometricPotential(
-                         t,
-                         Barycentre(std::pair(peak, well.position),
-                                    std::pair(x, r - x))) -
+                         t, Barycentre({peak, well.position}, {x, r - x})) -
                      energy;
             },
             well.radius,
             r);
         Position<Frame> const equipotential_position =
-            Barycentre(std::pair(peak, well.position), std::pair(x, r - x));
+            Barycentre({peak, well.position}, {x, r - x});
         lines.push_back(ComputeLine(plane, t, equipotential_position));
       } else {
-        // Try to delineate |peak| from the well at infinity; this works as for
+        // Try to delineate `peak` from the well at infinity; this works as for
         // an actual well, but instead of picking the point on the edge of the
         // well in the direction of the peak we generate a far away point based
         // on the peak (corresponding to a point on the edge of the well at
@@ -287,21 +184,18 @@ auto Equipotential<InertialFrame, Frame>::ComputeLines(
         double const x = Brent(
             [&](double const& x) {
               return reference_frame_->GeometricPotential(
-                         t,
-                         Barycentre(std::pair(peak, far_away),
-                                    std::pair(x, 1 - x))) -
+                         t, Barycentre({peak, far_away}, {x, 1 - x})) -
                      energy;
             },
             0.0,
             1.0);
         Position<Frame> const equipotential_position =
-            Barycentre(std::pair(peak, far_away), std::pair(x, 1 - x));
+            Barycentre({peak, far_away}, {x, 1 - x});
         lines.push_back(ComputeLine(plane, t, equipotential_position));
       }
       std::vector<Position<Frame>> positions;
-      for (auto const& dependent_variables : lines.back()) {
-        auto const& [position, _] = dependent_variables;
-        positions.push_back(position);
+      for (auto const& [s, dof] : lines.back()) {
+        positions.push_back(dof.position());
       }
 
       // Figure out whether the equipotential introduces new delineations.

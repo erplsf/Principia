@@ -1,6 +1,6 @@
 ﻿param([switch]$strict = $false)
 
-$version = "17.4.5"
+$version = "17.10.5"
 $preview = ""
 
 if ($preview.length -gt 0) {
@@ -22,7 +22,7 @@ $msbuildpaths = &$vswhere                 `
     -prerelease                           `
     -all                                  `
     -requires Microsoft.Component.MSBuild `
-    -find MSBuild\**\Bin\MSBuild.exe
+    -find MSBuild\**\Bin\amd64\MSBuild.exe
 
 $i = 0;
 foreach ($name in $names) {
@@ -33,7 +33,7 @@ foreach ($name in $names) {
 }
 
 function version-tuple($name) {
-  $tuple = [double[]]$name.split(@("/", "+"))[1].split(
+  $tuple = [double[]]$name.split([char[]]"/+")[1].split(
       [string[]]@(".", "-pre."), [StringSplitOptions]::none)
   if ($tuple.length -lt 5) {
     # Count non-previews as preview ∞.0.

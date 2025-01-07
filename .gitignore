@@ -115,8 +115,14 @@ temp/
 # Generated files
 *.generated.*
 
+# Unity
+unity/
+
 # Vagrant
 .vagrant/
 
 # Visual Studio Code
 .vscode/
+
+# Nuget
+.nuget/

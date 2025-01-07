@@ -4,9 +4,15 @@
 #include <random>
 
 #include "geometry/frame.hpp"
+#include "geometry/point.hpp"
+#include "geometry/r3_element.hpp"
 #include "geometry/space.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
+#include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
 #include "testing_utilities/almost_equals.hpp"
 
@@ -243,7 +249,7 @@ TEST_F(DoublePrecisionTest, Consistencies) {
   // DoublePrecision<Point> - DoublePrecision<Point>.
   EXPECT_THAT(DebugString(q1 - q2), Eq(DebugString(w1 + -w2)));
 
-  // We now showcase the difference between |Increment| and |operator+=|.
+  // We now showcase the difference between `Increment` and `operator+=`.
   auto compensated_accumulator = -w2;
   compensated_accumulator.Increment(v1);
   auto double_accumulator = -w2;
@@ -276,6 +282,20 @@ TEST_F(DoublePrecisionTest, Product) {
                            0));
 }
 
+TEST_F(DoublePrecisionTest, ProductAndAdd) {
+  Time const a = 3.0 * Second;
+  Speed const b =  7.0 * Metre / Second;
+  Length const c = 5.0 * Metre;
+  auto const add = TwoProductAdd(a, b, c);
+  EXPECT_THAT(add.value, AlmostEquals(26.0 * Metre, 0));
+  auto const subtract = TwoProductSubtract(a, b, c);
+  EXPECT_THAT(subtract.value, AlmostEquals(16.0 * Metre, 0));
+  auto const negated_add = TwoProductNegatedAdd(a, b, c);
+  EXPECT_THAT(negated_add.value, AlmostEquals(-16.0 * Metre, 0));
+  auto const negated_subtract = TwoProductNegatedSubtract(a, b, c);
+  EXPECT_THAT(negated_subtract.value, AlmostEquals(-26.0 * Metre, 0));
+}
+
 TEST_F(DoublePrecisionTest, LongProduct) {
   DoublePrecision<Length> a(3 * Metre);
   a.Increment(474 * ε * Metre);
@@ -304,20 +324,6 @@ TEST_F(DoublePrecisionTest, LongQuotient) {
               AlmostEquals(7720456504064105.0 * std::pow(0.5, 54), 0));
   EXPECT_THAT(c.error,
               AlmostEquals(-7352815717686216.0 * std::pow(0.5, 110), 0));
-}
-
-TEST_F(DoublePrecisionTest, Mod2π) {
-  // Slightly above 2000 π.
-  DoublePrecision<Angle> a((2e3 * 103'993 + 2) / 33'102 * Radian);
-  auto const c = Mod2π(a);
-  // HexLiteral[
-  //     CorrectlyRound[Mod[CorrectlyRound[(2000 103993 + 2)/33102], 2 π]]]
-  EXPECT_THAT(c.value + c.error,
-              AlmostEquals(0x1.F12375A5877D6p-15 * Radian, 0));
-  // HexLiteral[CorrectlyRound[(2000 103993 + 2)/33102] -
-  //     CorrectlyRound[2000 CorrectlyRound[π]]]
-  EXPECT_THAT(a.value - 2000 * π * Radian,
-              AlmostEquals(0x1.F123760000000p-15 * Radian, 0));
 }
 
 }  // namespace numerics

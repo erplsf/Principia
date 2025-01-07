@@ -13,11 +13,12 @@ enum Encoding {
 // These two messages must come first because the other interchange messages use
 // them and we need to generate the structs in the correct order.
 message NavigationFrameParameters {
+  option (is_class) = true;
   // Must correspond to a rigid reference frame.
   required int32 extension = 1;  // 6000 to 6999, see ReferenceFrame.
   required int32 centre_index = 2;
-  required int32 primary_index = 3;
-  required int32 secondary_index = 4;
+  required int32 primary_index = 3 [(is_private) = true];
+  required int32 secondary_index = 4 [(is_private) = true];
 }
 
 message XYZ {
@@ -128,6 +129,13 @@ message NavigationManoeuvreFrenetTrihedron {
   required XYZ tangent = 3;
 }
 
+message Node {
+  required double time = 1;
+  required XYZ world_position = 2;
+  required double apparent_inclination_in_degrees = 3;
+  required double out_of_plane_velocity = 4;
+}
+
 message Origin {
   required bool reference_part_is_at_origin = 1;
   required bool reference_part_is_unmoving = 2;
@@ -141,13 +149,18 @@ message Origin {
 message PlottingFrameParameters {
   required int32 extension = 1;  // 6000 to 6999, see ReferenceFrame.
   required int32 centre_index = 2;
-  required int32 primary_index = 3;
-  required int32 secondary_index = 4;
+  repeated int32 primary_index = 3;
+  repeated int32 secondary_index = 4;
 }
 
 message QP {
   required XYZ q = 1;
   required XYZ p = 2;
+}
+
+message TQP {
+  required double t = 1;
+  required QP qp = 2;
 }
 
 message Status {
@@ -237,7 +250,7 @@ message OrbitAnalysis {
 }
 
 message Method {
-  extensions 5000 to 5999;  // Last used: 5182.
+  extensions 5000 to 5999;  // Last used: 5197.
 }
 
 message AdvanceTime {
@@ -278,6 +291,20 @@ message CameraReferenceRotation {
   }
   message Return {
     required WXYZ result = 1;
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message CameraScale {
+  extend Method {
+    optional CameraScale extension = 5185;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin", (is_subject) = true];
+  }
+  message Return {
+    required double result = 1;
   }
   optional In in = 1;
   optional Return return = 3;
@@ -394,6 +421,115 @@ message CelestialWorldDegreesOfFreedom {
   }
   optional In in = 1;
   optional Return return = 3;
+}
+
+message CollisionDeleteExecutor {
+  extend Method {
+    optional CollisionDeleteExecutor extension = 5193;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required fixed64 executor = 2
+        [(pointer_to) =
+         "PushPullExecutor<std::optional<DiscreteTrajectory<World>::value_type>, Length, Angle, Angle>",
+         (is_consumed) = true];
+  }
+  message Out {
+    required fixed64 executor = 1
+        [(pointer_to) =
+         "PushPullExecutor<std::optional<DiscreteTrajectory<World>::value_type>, Length, Angle, Angle>"];
+    // Deleting the executor returns the time and degrees of freedom of the
+    // collision, if any.
+    required TQP collision = 2;
+  }
+  message Return {
+    // True if a collision was found.
+    required bool found = 1;
+  }
+  optional In in = 1;
+  optional Out out = 2;
+  optional Return return = 3;
+}
+
+message CollisionGetLatitudeLongitude {
+  extend Method {
+    optional CollisionGetLatitudeLongitude extension = 5194;
+  }
+  message In {
+    required fixed64 executor = 1
+        [(pointer_to) =
+         "PushPullExecutor<std::optional<DiscreteTrajectory<World>::value_type>, Length, Angle, Angle>",
+         (is_subject) = true];
+  }
+  message Out {
+    required double latitude_in_degrees = 1;
+    required double longitude_in_degrees = 2;
+  }
+  message Return {
+    required bool result = 1;
+  }
+  optional In in = 1;
+  optional Out out = 2;
+  optional Return return = 3;
+}
+
+message CollisionNewFlightPlanExecutor {
+  extend Method {
+    optional CollisionNewFlightPlanExecutor extension = 5196;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required int32 celestial_index = 2;
+    required XYZ sun_world_position = 3;
+    required int32 max_points = 7;
+    required string vessel_guid = 4;
+  }
+  message Return {
+    required fixed64 result = 1
+    [(pointer_to) =
+    "PushPullExecutor<std::optional<DiscreteTrajectory<World>::value_type>, Length, Angle, Angle>",
+    (is_produced) = true];
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message CollisionNewPredictionExecutor {
+  extend Method {
+    optional CollisionNewPredictionExecutor extension = 5192;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required int32 celestial_index = 2;
+    required XYZ sun_world_position = 3;
+    required int32 max_points = 7;
+    required string vessel_guid = 4;
+  }
+  message Return {
+    required fixed64 result = 1
+    [(pointer_to) =
+    "PushPullExecutor<std::optional<DiscreteTrajectory<World>::value_type>, Length, Angle, Angle>",
+    (is_produced) = true];
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message CollisionSetRadius {
+  extend Method {
+    optional CollisionSetRadius extension = 5195;
+  }
+  message In {
+    required fixed64 executor = 1
+        [(pointer_to) =
+         "PushPullExecutor<std::optional<DiscreteTrajectory<World>::value_type>, Length, Angle, Angle>",
+         (is_subject) = true];
+    required double radius = 2;
+  }
+  optional In in = 1;
 }
 
 message ClearFlags {
@@ -531,6 +667,20 @@ message EndInitialization {
   optional In in = 1;
 }
 
+message EquipotentialCount {
+  extend Method {
+    optional EquipotentialCount extension = 5184;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin", (is_subject) = true];
+  }
+  message Return {
+    required int32 result = 1;
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
 // These functions form the external API of Principia; announce deprecation one
 // lunation ahead, then make them return UNIMPLEMENTED.
 
@@ -609,9 +759,9 @@ message ExternalFlowFreefall {
   optional Return return = 3;
 }
 
-// Sets |coefficient| to the normalized geopotential coefficient of the given
-// |degree| and |order| of the body with index |body_index|.
-// |coefficient.x| is set to Cnm, |coefficient.y| is set to Snm.
+// Sets `coefficient` to the normalized geopotential coefficient of the given
+// `degree` and `order` of the body with index `body_index`.
+// `coefficient.x` is set to Cnm, `coefficient.y` is set to Snm.
 message ExternalGeopotentialGetCoefficient {
   extend Method {
     optional ExternalGeopotentialGetCoefficient extension = 5156;
@@ -635,8 +785,8 @@ message ExternalGeopotentialGetCoefficient {
   optional Return return = 3;
 }
 
-// Sets |reference_radius| to the value in metres of the reference radius of
-// the geopotential model for the body with index |body_index|.
+// Sets `reference_radius` to the value in metres of the reference radius of
+// the geopotential model for the body with index `body_index`.
 // If the body does not have a geopotential model, i.e., if it is modeled as an
 // isotropic sphere, the mean radius is used.
 message ExternalGeopotentialGetReferenceRadius {
@@ -813,6 +963,23 @@ message FlightPlanGetActualFinalTime {
   optional Return return = 3;
 }
 
+message FlightPlanGetAnomalousStatus {
+  extend Method {
+    optional FlightPlanGetAnomalousStatus extension = 5187;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required string vessel_guid = 2;
+  }
+  message Return {
+    required Status result = 1 [(is_produced) = true];
+    required fixed64 address = 2 [(address_of) = "result"];
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
 message FlightPlanGetCoastAnalysis {
   extend Method {
     optional FlightPlanGetCoastAnalysis extension = 5177;
@@ -894,7 +1061,8 @@ message FlightPlanGetManoeuvre {
     required int32 index = 3;
   }
   message Return {
-    required NavigationManoeuvre result = 1;
+    required NavigationManoeuvre result = 1 [(is_produced) = true];
+    required fixed64 address = 2 [(address_of) = "result"];
   }
   optional In in = 1;
   optional Return return = 3;
@@ -912,6 +1080,23 @@ message FlightPlanGetManoeuvreFrenetTrihedron {
   }
   message Return {
     required NavigationManoeuvreFrenetTrihedron result = 1;
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message FlightPlanGetManoeuvreInitialPlottedVelocity {
+  extend Method {
+    optional FlightPlanGetManoeuvreInitialPlottedVelocity extension = 5186;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required string vessel_guid = 2;
+    required int32 index = 3;
+  }
+  message Return {
+    required XYZ result = 1;
   }
   optional In in = 1;
   optional Return return = 3;
@@ -935,7 +1120,6 @@ message FlightPlanInsert {
   optional In in = 1;
   optional Return return = 3;
 }
-
 
 message FlightPlanNumberOfAnomalousManoeuvres {
   extend Method {
@@ -985,6 +1169,51 @@ message FlightPlanNumberOfSegments {
   optional Return return = 3;
 }
 
+message FlightPlanOptimizationDriverInProgress {
+  extend Method {
+    optional FlightPlanOptimizationDriverInProgress extension = 5188;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required string vessel_guid = 2;
+  }
+  message Return {
+    required int32 manoeuvre_index = 2;
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message FlightPlanOptimizationDriverMake {
+  extend Method {
+    optional FlightPlanOptimizationDriverMake extension = 5191;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required string vessel_guid = 2;
+    required double distance = 3;
+    optional double inclination_in_degrees = 4;
+    required int32 celestial_index = 5;
+    required NavigationFrameParameters navigation_frame_parameters = 6;
+  }
+  optional In in = 1;
+}
+
+message FlightPlanOptimizationDriverStart {
+  extend Method {
+    optional FlightPlanOptimizationDriverStart extension = 5189;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required string vessel_guid = 2;
+    required int32 manoeuvre_index = 3;
+  }
+  optional In in = 1;
+}
+
 message FlightPlanRebase {
   extend Method {
     optional FlightPlanRebase extension = 5173;
@@ -1029,6 +1258,7 @@ message FlightPlanRenderedApsides {
     required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
                                  (is_subject) = true];
     required string vessel_guid = 2;
+    optional double t_max = 6;  // Added in von Koch.
     required int32 celestial_index = 3;
     required XYZ sun_world_position = 4;
     required int32 max_points = 5;
@@ -1074,6 +1304,7 @@ message FlightPlanRenderedNodes {
     required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
                                  (is_subject) = true];
     required string vessel_guid = 2;
+    optional double t_max = 6;  // Added in von Koch.
     required XYZ sun_world_position = 4;
     required int32 max_points = 5;
   }
@@ -1189,6 +1420,22 @@ message FlightPlanSetDesiredFinalTime {
   message Return {
     required Status result = 1 [(is_produced) = true];
     required fixed64 address = 2 [(address_of) = "result"];
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message FlightPlanUpdateFromOptimization {
+  extend Method {
+    optional FlightPlanUpdateFromOptimization extension = 5190;
+  }
+  message In {
+    required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
+                                 (is_subject) = true];
+    required string vessel_guid = 2;
+  }
+  message Return {
+    required bool result = 1;
   }
   optional In in = 1;
   optional Return return = 3;
@@ -1545,6 +1792,22 @@ message IteratorGetDiscreteTrajectoryXYZ {
   }
   message Return {
     required XYZ result = 1;
+  }
+  optional In in = 1;
+  optional Return return = 3;
+}
+
+message IteratorGetNode {
+  extend Method {
+    optional IteratorGetNode extension = 5197;
+  }
+  message In {
+    required fixed64 iterator = 1 [(pointer_to) = "Iterator const",
+                                   (disposable) = "DisposableIterator",
+                                   (is_subject) = true];
+  }
+  message Return {
+    required Node node = 1;
   }
   optional In in = 1;
   optional Return return = 3;
@@ -1924,6 +2187,27 @@ message PlanetariumPlotCelestialPastTrajectory {
   optional Out out = 2;
 }
 
+message PlanetariumPlotEquipotential {
+  extend Method {
+    optional PlanetariumPlotEquipotential extension = 5183;
+  }
+  message In {
+    required fixed64 planetarium = 1 [(pointer_to) = "Planetarium const",
+                                      (disposable) = "DisposablePlanetarium",
+                                      (is_subject) = true];
+    required fixed64 plugin = 2 [(pointer_to) = "Plugin const"];
+    required int32 index = 3;
+    required fixed64 vertices = 4 [(pointer_to) = "ScaledSpacePoint",
+                                   (is_csharp_owned) = true];
+    required int32 vertices_size = 5 [(size_of) = "vertices"];
+  }
+  message Out {
+    required int32 vertex_count = 1;
+  }
+  optional In in = 1;
+  optional Out out = 2;
+}
+
 message PlanetariumPlotFlightPlanSegment {
   extend Method {
     optional PlanetariumPlotFlightPlanSegment extension = 5137;
@@ -1935,6 +2219,7 @@ message PlanetariumPlotFlightPlanSegment {
     required fixed64 plugin = 2 [(pointer_to) = "Plugin const"];
     required string vessel_guid = 4;
     required int32 index = 5;
+    optional double t_max = 8;  // Added in von Koch.
     required fixed64 vertices = 6 [(pointer_to) = "ScaledSpacePoint",
                                    (is_csharp_owned) = true];
     required int32 vertices_size = 7 [(size_of) = "vertices"];
@@ -1956,6 +2241,7 @@ message PlanetariumPlotPrediction {
                                       (is_subject) = true];
     required fixed64 plugin = 2 [(pointer_to) = "Plugin const"];
     required string vessel_guid = 4;
+    optional double t_max = 7;  // Added in von Koch.
     required fixed64 vertices = 5 [(pointer_to) = "ScaledSpacePoint",
                                    (is_csharp_owned) = true];
     required int32 vertices_size = 6 [(size_of) = "vertices"];
@@ -1978,6 +2264,7 @@ message PlanetariumPlotPsychohistory {
     required fixed64 plugin = 2 [(pointer_to) = "Plugin const"];
     required string vessel_guid = 4;
     required double max_history_length = 5;
+    optional double t_max = 8;  // Added in von Koch.
     required fixed64 vertices = 6 [(pointer_to) = "ScaledSpacePoint",
                                    (is_csharp_owned) = true];
     required int32 vertices_size = 7 [(size_of) = "vertices"];
@@ -2007,6 +2294,7 @@ message RenderedPredictionApsides {
     required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
                                  (is_subject) = true];
     required string vessel_guid = 2;
+    optional double t_max = 6;  // Added in von Koch.
     required int32 celestial_index = 3;
     required XYZ sun_world_position = 4;
     required int32 max_points = 5;
@@ -2052,6 +2340,7 @@ message RenderedPredictionNodes {
     required fixed64 plugin = 1 [(pointer_to) = "Plugin const",
                                  (is_subject) = true];
     required string vessel_guid = 2;
+    optional double t_max = 5;  // Added in von Koch.
     required XYZ sun_world_position = 3;
     required int32 max_points = 4;
   }
@@ -2477,11 +2766,16 @@ extend google.protobuf.FieldOptions {
   // object is owned by C# and not by C++.  There must be a field with a
   // (size_of) option designating this field.
   optional bool is_csharp_owned = 50015;
+
+  // For a field of an interchange message, specifies whether the generated C#
+  // field should be private (the default is public).
+  optional bool is_private = 50017;
 }
 
 extend google.protobuf.MessageOptions {
-  // For an interchange message, specifies the custom marshaler to use.
-  optional string custom_marshaler = 50011;
+  // For an interchange message, specifies that a class should be generated
+  // instead of a struct in the C# code.
+  optional bool is_class = 50016;
   // For an interchange message, specifies whether the generated C# struct
   // should be public (the default is internal).
   optional bool is_public = 50012;

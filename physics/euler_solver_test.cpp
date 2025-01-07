@@ -7,19 +7,18 @@
 #include <set>
 #include <vector>
 
-#include "astronomy/epoch.hpp"
 #include "astronomy/frames.hpp"
 #include "astronomy/time_scales.hpp"
 #include "geometry/frame.hpp"
+#include "geometry/grassmann.hpp"
 #include "geometry/instant.hpp"
-#include "geometry/orthogonal_map.hpp"
 #include "geometry/permutation.hpp"
 #include "geometry/r3_element.hpp"
 #include "geometry/rotation.hpp"
 #include "geometry/space.hpp"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
@@ -28,6 +27,7 @@
 #include "testing_utilities/componentwise.hpp"
 #include "testing_utilities/is_near.hpp"
 #include "testing_utilities/matchers.hpp"
+#include "testing_utilities/numerics.hpp"
 #include "testing_utilities/numerics_matchers.hpp"
 #include "testing_utilities/vanishes_before.hpp"
 
@@ -42,7 +42,6 @@ using namespace principia::astronomy::_time_scales;
 using namespace principia::geometry::_frame;
 using namespace principia::geometry::_grassmann;
 using namespace principia::geometry::_instant;
-using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_permutation;
 using namespace principia::geometry::_r3_element;
 using namespace principia::geometry::_rotation;
@@ -691,8 +690,10 @@ TEST_F(EulerSolverTest, GeneralBodyRotationAlongThirdAxis) {
   EXPECT_THAT(
       actual_angular_velocity,
       AlmostEquals(solver.AngularVelocityFor(initial_angular_momentum), 0));
-  EXPECT_THAT(actual_attitude(e1_), AlmostEquals(expected_attitude(e1_), 136));
-  EXPECT_THAT(actual_attitude(e2_), AlmostEquals(expected_attitude(e2_), 136));
+  EXPECT_THAT(actual_attitude(e1_),
+              AlmostEquals(expected_attitude(e1_), 136, 148));
+  EXPECT_THAT(actual_attitude(e2_),
+              AlmostEquals(expected_attitude(e2_), 136, 148));
   EXPECT_THAT(actual_attitude(e3_), AlmostEquals(expected_attitude(e3_), 0));
 }
 

@@ -1,21 +1,24 @@
 #include "physics/continuous_trajectory.hpp"
 
 #include <algorithm>
-#include <deque>
 #include <functional>
 #include <limits>
+#include <memory>
+#include <utility>
 #include <vector>
 
+#include "base/not_null.hpp"
 #include "geometry/frame.hpp"
 #include "geometry/instant.hpp"
 #include "geometry/space.hpp"
 #include "gtest/gtest.h"
 #include "numerics/polynomial.hpp"
 #include "numerics/polynomial_evaluators.hpp"
-#include "numerics/чебышёв_series.hpp"
+#include "numerics/polynomial_in_monomial_basis.hpp"
 #include "physics/degrees_of_freedom.hpp"
 #include "quantities/astronomy.hpp"
-#include "quantities/numbers.hpp"
+#include "quantities/elementary_functions.hpp"
+#include "quantities/named_quantities.hpp"
 #include "quantities/quantities.hpp"
 #include "quantities/si.hpp"
 #include "serialization/geometry.pb.h"
@@ -38,6 +41,7 @@ using namespace principia::geometry::_instant;
 using namespace principia::geometry::_space;
 using namespace principia::numerics::_polynomial;
 using namespace principia::numerics::_polynomial_evaluators;
+using namespace principia::numerics::_polynomial_in_monomial_basis;
 using namespace principia::physics::_continuous_trajectory;
 using namespace principia::physics::_degrees_of_freedom;
 using namespace principia::quantities::_astronomy;
@@ -100,8 +104,7 @@ TestableContinuousTrajectory<Frame>::NewhallApproximationInMonomialBasis(
     Instant const& t_min,
     Instant const& t_max,
     Displacement<Frame>& error_estimate) const {
-  using P = PolynomialInMonomialBasis<
-                Position<Frame>, Instant, /*degree=*/1, HornerEvaluator>;
+  using P = PolynomialInMonomialBasis<Position<Frame>, Instant, /*degree=*/1>;
   typename P::Coefficients const coefficients = {Position<Frame>(),
                                                  Velocity<Frame>()};
   not_null<std::unique_ptr<Polynomial<Position<Frame>, Instant>>>
@@ -206,6 +209,25 @@ class ContinuousTrajectoryTest : public testing::Test {
            ->mutable_coefficient(0)->mutable_multivector() = coefficient0;
     }
     return pre_gröbner;
+  }
+
+  serialization::ContinuousTrajectory MakePreΚαραθεοδωρή(
+      serialization::ContinuousTrajectory const& message) {
+    serialization::ContinuousTrajectory pre_καραθεοδωρή = message;
+    for (auto& pair : *pre_καραθεοδωρή.mutable_instant_polynomial_pair()) {
+      pair.mutable_polynomial()
+          ->MutableExtension(
+              serialization::PolynomialInMonomialBasis::extension)
+          ->clear_evaluator();
+    }
+    return pre_καραθεοδωρή;
+  }
+
+  serialization::ContinuousTrajectory MakePreکاشانی(
+      serialization::ContinuousTrajectory const& message) {
+    serialization::ContinuousTrajectory pre_کاشانی = message;
+    pre_کاشانی.clear_policy();
+    return pre_کاشانی;
   }
 
   Instant const t0_;
@@ -691,7 +713,7 @@ TEST_F(ContinuousTrajectoryTest, Prepend) {
        time <= t2;
        time += step / number_of_substeps) {
     EXPECT_THAT(trajectory2->EvaluatePosition(time),
-                AlmostEquals(position_function1(time), 0, 10)) << time;
+                AlmostEquals(position_function1(time), 0, 11)) << time;
     EXPECT_THAT(trajectory2->EvaluateVelocity(time),
                 AlmostEquals(velocity_function1(time), 0, 4)) << time;
   }
@@ -820,8 +842,8 @@ TEST_F(ContinuousTrajectoryTest, PreCohenCompatibility) {
   auto* const series = message.add_series();
   Instant t_min = Instant() - 1 * Second;
   Instant t_max = Instant() + 1 * Second;
-  t_min.WriteToMessage(series->mutable_t_min());
-  t_max.WriteToMessage(series->mutable_t_max());
+  t_min.WriteToMessage(series->mutable_lower_bound());
+  t_max.WriteToMessage(series->mutable_upper_bound());
   Displacement<World> const c0({1.0 * Metre, 1.0 * Metre, 1.0 * Metre});
   Displacement<World> const c1({-2.0 * Metre, -2.0 * Metre, -2.0 * Metre});
   Displacement<World> const c2({3.0 * Metre, 3.0 * Metre, 3.0 * Metre});
@@ -893,7 +915,9 @@ TEST_F(ContinuousTrajectoryTest, PreGrassmannCompatibility) {
   trajectory1->WriteToMessage(&message1);
 
   serialization::ContinuousTrajectory const pre_grassmann =
-      MakePreGrassmann(MakePreGröbner(message1), checkpoint_time);
+      MakePreGrassmann(
+          MakePreGröbner(MakePreΚαραθεοδωρή(MakePreکاشانی(message1))),
+          checkpoint_time);
 
   // Read from the pre-Grassmann message, write to a second message, and check
   // that we get the same result.
@@ -903,6 +927,27 @@ TEST_F(ContinuousTrajectoryTest, PreGrassmannCompatibility) {
   serialization::ContinuousTrajectory message2;
   trajectory2->WriteToMessage(&message2);
 
+  // Pre-Grassmann messages use Estrin without FMA.  Recent messages use
+  // whatever they like.  Check and clear the evaluator kind and policy before
+  // comparing the messages.
+  for (auto& pair : *message1.mutable_instant_polynomial_pair()) {
+    auto* const extension = pair.mutable_polynomial()->MutableExtension(
+        serialization::PolynomialInMonomialBasis::extension);
+    extension->mutable_evaluator()->clear_kind();
+  }
+  message1.clear_policy();
+  for (auto& pair : *message2.mutable_instant_polynomial_pair()) {
+    auto* const extension = pair.mutable_polynomial()->MutableExtension(
+        serialization::PolynomialInMonomialBasis::extension);
+    EXPECT_EQ(
+        serialization::PolynomialInMonomialBasis::Evaluator::ESTRIN_WITHOUT_FMA,
+        extension->evaluator().kind());
+    extension->mutable_evaluator()->clear_kind();
+  }
+  EXPECT_EQ(serialization::PolynomialInMonomialBasis::Policy::
+                ALWAYS_ESTRIN_WITHOUT_FMA,
+            message2.policy().kind());
+  message2.clear_policy();
   EXPECT_THAT(message2, EqualsProto(message1));
 }
 
@@ -941,7 +986,7 @@ TEST_F(ContinuousTrajectoryTest, PreGröbnerCompatibility) {
   trajectory1->WriteToMessage(&message1);
 
   serialization::ContinuousTrajectory const pre_gröbner =
-      MakePreGröbner(message1);
+      MakePreGröbner(MakePreΚαραθεοδωρή(MakePreکاشانی(message1)));
 
   // Read from the pre-Gröbner message, write to a second message, and check
   // that we get the same result.
@@ -951,6 +996,27 @@ TEST_F(ContinuousTrajectoryTest, PreGröbnerCompatibility) {
   serialization::ContinuousTrajectory message2;
   trajectory2->WriteToMessage(&message2);
 
+  // Pre-Gröbner messages use Estrin without FMA.  Recent messages use whatever
+  // they like.  Check and clear the evaluator kind and policy before comparing
+  // the messages.
+  for (auto& pair : *message1.mutable_instant_polynomial_pair()) {
+    auto* const extension = pair.mutable_polynomial()->MutableExtension(
+        serialization::PolynomialInMonomialBasis::extension);
+    extension->mutable_evaluator()->clear_kind();
+  }
+  message1.clear_policy();
+  for (auto& pair : *message2.mutable_instant_polynomial_pair()) {
+    auto* const extension = pair.mutable_polynomial()->MutableExtension(
+        serialization::PolynomialInMonomialBasis::extension);
+    EXPECT_EQ(
+        serialization::PolynomialInMonomialBasis::Evaluator::ESTRIN_WITHOUT_FMA,
+        extension->evaluator().kind());
+    extension->mutable_evaluator()->clear_kind();
+  }
+  EXPECT_EQ(serialization::PolynomialInMonomialBasis::Policy::
+                ALWAYS_ESTRIN_WITHOUT_FMA,
+            message2.policy().kind());
+  message2.clear_policy();
   EXPECT_THAT(message2, EqualsProto(message1));
 }
 

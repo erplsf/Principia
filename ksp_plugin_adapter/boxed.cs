@@ -3,7 +3,7 @@ namespace ksp_plugin_adapter {
 
 // Strongly-typed boxing.  This is used for marshaling optional parameters,
 // since custom marshalers are only allowed on classes, strings, arrays, and
-// boxed value types, so that |T?| cannot be marshaled, and |object| is not
+// boxed value types, so that `T?` cannot be marshaled, and `object` is not
 // statically typed.
 internal class Boxed<T> where T : struct {
   public T all { get; }
@@ -13,7 +13,7 @@ internal class Boxed<T> where T : struct {
   }
 }
 
-// The |MarshalAsAttribute| does not support marshaling of generic types.
+// The `MarshalAsAttribute` does not support marshaling of generic types.
 internal class BoxedDouble : Boxed<double> {
   public static implicit operator BoxedDouble(double all) {
     return new BoxedDouble(all);
@@ -28,6 +28,22 @@ internal class BoxedInt32 : Boxed<int> {
   }
 
   protected BoxedInt32(int all) : base(all) {}
+}
+
+internal class BoxedInt64 : Boxed<long> {
+  public static implicit operator BoxedInt64(long all) {
+    return new BoxedInt64(all);
+  }
+
+  protected BoxedInt64(long all) : base(all) {}
+}
+
+internal class BoxedUInt32 : Boxed<uint> {
+  public static implicit operator BoxedUInt32(uint all) {
+    return new BoxedUInt32(all);
+  }
+
+  protected BoxedUInt32(uint all) : base(all) {}
 }
 
 internal class BoxedKeplerianElements : Boxed<KeplerianElements> {

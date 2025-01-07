@@ -1,23 +1,23 @@
 #include "journal/player.hpp"
 
 #include <chrono>
-#include <list>
+#include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include "benchmark/benchmark.h"
 #include "glog/logging.h"
 #include "gtest/gtest.h"
 #include "journal/method.hpp"
-#include "journal/profiles.hpp"
+#include "journal/profiles.hpp"  // 🧙 For generated profiles.
 #include "journal/recorder.hpp"
-#include "ksp_plugin/interface.hpp"
+#include "ksp_plugin/plugin.hpp"
 #include "serialization/journal.pb.h"
 
 namespace principia {
 namespace journal {
 
+using namespace principia::journal::_method;
 using namespace principia::journal::_player;
 using namespace principia::journal::_recorder;
 using namespace principia::ksp_plugin::_plugin;
@@ -91,7 +91,7 @@ TEST_F(PlayerTest, DISABLED_SECULAR_Benchmarks) {
 }
 
 // A convenience test to find the last unpaired method of a journal.  You must
-// set |path|.
+// set `path`.
 TEST_F(PlayerTest, DISABLED_SECULAR_Scan) {
   std::string path =
       R"(P:\Public Mockingbird\Principia\Crashes\3375\JOURNAL.20220610-092143)";  // NOLINT
@@ -109,11 +109,11 @@ TEST_F(PlayerTest, DISABLED_SECULAR_Scan) {
              << player.last_method_out_return().DebugString();
 }
 
-// A test to debug a journal.  You must set |path| and fill the |method_in| and
-// |method_out_return| protocol buffers.
+// A test to debug a journal.  You must set `path` and fill the `method_in` and
+// `method_out_return` protocol buffers.
 TEST_F(PlayerTest, DISABLED_SECULAR_Debug) {
   std::string path =
-      R"(P:\Public Mockingbird\Principia\Issues\3520\JOURNAL.20230218-092106)";  // NOLINT
+      R"(P:\Public Mockingbird\Principia\Issues\3872\JOURNAL.20240210-173425)";  // NOLINT
   Player player(path);
   int count = 0;
   while (player.Play(count)) {
@@ -129,22 +129,24 @@ TEST_F(PlayerTest, DISABLED_SECULAR_Debug) {
              << player.last_method_in().DebugString();
   LOG(ERROR) << "Last successful method out/return: \n"
              << player.last_method_out_return().DebugString();
+  std::this_thread::sleep_for(10s);
 
 #if 0
   serialization::Method method_in;
   {
     auto* extension = method_in.MutableExtension(
-        serialization::DeletePlugin::extension);
+        serialization::CollisionDeleteExecutor::extension);
     auto* in = extension->mutable_in();
-    in->set_plugin(2734566559920);
+    in->set_plugin(2237555212240);
+    in->set_executor(2237561081696);
   }
   serialization::Method method_out_return;
   {
     auto* extension = method_out_return.MutableExtension(
-        serialization::DeletePlugin::extension);
+        serialization::CollisionDeleteExecutor::extension);
   }
   LOG(ERROR) << "Running unpaired method:\n" << method_in.DebugString();
-  CHECK(RunIfAppropriate<DeletePlugin>(
+  CHECK(RunIfAppropriate<CollisionDeleteExecutor>(
       method_in, method_out_return, player));
 #endif
 #if 0

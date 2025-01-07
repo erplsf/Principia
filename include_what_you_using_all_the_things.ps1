@@ -1,0 +1,29 @@
+﻿.\sourcerer\bin\Release\net7.0\sourcerer.exe `
+    include_what_you_using `
+    --dry_run:false `
+    --project:astronomy `
+    --project:base `
+    --project:benchmarks `
+    --project:functions `
+    --project:geometry `
+    --project:integrators `
+    --project:journal `
+    --project:ksp_plugin `
+    --project:ksp_plugin_test `
+    --project:mathematica `
+    --project:nanobenchmarks `
+    --project:numerics `
+    --project:physics `
+    --project:quantities `
+    --project:testing_utilities `
+    --project:tools `
+    --extra_header:body.hpp `
+    --extra_header:massive_body.hpp `
+    --extra_header:massless_body.hpp `
+    --extra_header:oblate_body.hpp `
+    --extra_header:rotating_body.hpp `
+    --special_own_header:ksp_plugin/interface_*.cpp=ksp_plugin/interface.hpp `
+    --special_own_header:ksp_plugin_test/interface_*.cpp=ksp_plugin/interface.hpp `
+    --special_own_header:ksp_plugin_test/benchmark.cpp=ksp_plugin/plugin.hpp `
+    --special_own_header:ksp_plugin_test/plugin*_test.cpp=ksp_plugin/plugin.hpp `
+    --special_own_header:functions/sin_cos_test.cpp=numerics/sin_cos.hpp

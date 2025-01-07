@@ -1,10 +1,10 @@
 #pragma once
 
 #include "geometry/grassmann.hpp"
-#include "numerics/polynomial.hpp"
 #include "numerics/polynomial_evaluators.hpp"
-#include "quantities/quantities.hpp"
+#include "numerics/polynomial_in_monomial_basis.hpp"
 #include "quantities/named_quantities.hpp"
+#include "quantities/quantities.hpp"
 
 namespace principia {
 namespace physics {
@@ -12,8 +12,8 @@ namespace _harmonic_damping {
 namespace internal {
 
 using namespace principia::geometry::_grassmann;
-using namespace principia::numerics::_polynomial;
 using namespace principia::numerics::_polynomial_evaluators;
+using namespace principia::numerics::_polynomial_in_monomial_basis;
 using namespace principia::quantities::_named_quantities;
 using namespace principia::quantities::_quantities;
 
@@ -33,7 +33,7 @@ class HarmonicDamping final {
   // This class depends on the invariant: outer_threshold = 3 * inner_threshold.
   Length const& inner_threshold() const;
 
-  // Sets σℜ_over_r and grad_σℜ according to σ as defined by |*this|.
+  // Sets σℜ_over_r and grad_σℜ according to σ as defined by `*this`.
   template<typename Frame>
   void ComputeDampedRadialQuantities(
       Length const& r_norm,
@@ -57,11 +57,10 @@ class HarmonicDamping final {
   // For r in [outer_threshold, inner_threshold], σ is a polynomial with the
   // following coefficients in monomial basis.
   // The constant term is always 0, and is thus ignored in the evaluation.
-  // TODO(phl): We have to specify an evaluator, but we do not use it; we use a
-  // custom evaluation that ignores the constant term instead.  See #1922.
-  PolynomialInMonomialBasis<
-      double, Length, 3,
-      EstrinEvaluator>::Coefficients sigmoid_coefficients_;
+  // TODO(phl): We don't use an evaluator; we use a custom evaluation that
+  // ignores the constant term instead.  See #1922.
+  PolynomialInMonomialBasis<double, Length, 3>::Coefficients
+      sigmoid_coefficients_;
 };
 }  // namespace internal
 

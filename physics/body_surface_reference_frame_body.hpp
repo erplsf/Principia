@@ -2,21 +2,23 @@
 
 #include "physics/body_surface_reference_frame.hpp"
 
+#include <memory>
 #include <utility>
 
-#include "base/not_null.hpp"
+#include "geometry/orthogonal_map.hpp"
 #include "geometry/rotation.hpp"
+#include "geometry/space_transformations.hpp"
+#include "physics/degrees_of_freedom.hpp"
 
 namespace principia {
 namespace physics {
 namespace _body_surface_reference_frame {
 namespace internal {
 
-using namespace principia::base::_not_null;
 using namespace principia::geometry::_orthogonal_map;
 using namespace principia::geometry::_rotation;
+using namespace principia::geometry::_space_transformations;
 using namespace principia::physics::_degrees_of_freedom;
-using namespace principia::quantities::_named_quantities;
 
 template<typename InertialFrame, typename ThisFrame>
 BodySurfaceReferenceFrame<InertialFrame, ThisFrame>::
@@ -104,8 +106,6 @@ template<typename InertialFrame, typename ThisFrame>
 AcceleratedRigidMotion<InertialFrame, ThisFrame>
 BodySurfaceReferenceFrame<InertialFrame, ThisFrame>::MotionOfThisFrame(
     Instant const& t) const {
-  DegreesOfFreedom<InertialFrame> const centre_degrees_of_freedom =
-      centre_trajectory_->EvaluateDegreesOfFreedom(t);
   Vector<Acceleration, InertialFrame> const centre_acceleration =
       ephemeris_->ComputeGravitationalAccelerationOnMassiveBody(centre_, t);
 

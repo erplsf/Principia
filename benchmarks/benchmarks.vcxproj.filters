@@ -14,58 +14,40 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="quantities.cpp">
+    <ClCompile Include="quantities_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="чебышёв_series.cpp">
+    <ClCompile Include="ephemeris_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ephemeris.cpp">
+    <ClCompile Include="rigid_reference_frame_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="rigid_reference_frame.cpp">
+    <ClCompile Include="symplectic_runge_kutta_nyström_integrator_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="symplectic_runge_kutta_nyström_integrator.cpp">
+    <ClCompile Include="embedded_explicit_runge_kutta_nyström_integrator_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="embedded_explicit_runge_kutta_nyström_integrator.cpp">
+    <ClCompile Include="perspective_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="perspective.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="polynomial.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="newhall.cpp">
+    <ClCompile Include="newhall_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\ksp_plugin\planetarium.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="planetarium_plot_methods.cpp">
+    <ClCompile Include="planetarium_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\numerics\cbrt.cpp">
+    <ClCompile Include="geopotential_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="fast_sin_cos_2π_benchmark.cpp">
+    <ClCompile Include="thread_pool_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\numerics\fast_sin_cos_2π.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="geopotential.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="thread_pool.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="encoder.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\numerics\elliptic_integrals.cpp">
+    <ClCompile Include="encoder_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="elliptic_integrals_benchmark.cpp">
@@ -74,40 +56,43 @@
     <ClCompile Include="elliptic_functions_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\numerics\elliptic_functions.cpp">
+    <ClCompile Include="apsides_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="apsides.cpp">
+    <ClCompile Include="discrete_trajectory_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\astronomy\standard_product_3.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\physics\protector.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\base\cpuid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="discrete_trajectory.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="nearest_neighbour.cpp">
+    <ClCompile Include="nearest_neighbour_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="checkpointer_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="global_optimization.cpp">
+    <ClCompile Include="global_optimization_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\testing_utilities\optimization_test_functions.cpp">
+    <ClCompile Include="orbital_elements_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="orbital_elements.cpp">
+    <ClCompile Include="lagrange_equipotentials_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\geometry\instant.cpp">
+    <ClCompile Include="approximation_benchmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="polynomial_in_monomial_basis_benchmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="polynomial_in_чебышёв_basis_benchmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="elementary_functions_benchmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="elementary_functions_experiments_benchmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="lattices_benchmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -117,6 +102,9 @@
     </ClInclude>
     <ClInclude Include="quantities_body.hpp">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="metric.hpp">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

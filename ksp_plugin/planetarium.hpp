@@ -6,6 +6,7 @@
 #include "geometry/instant.hpp"
 #include "geometry/orthogonal_map.hpp"
 #include "geometry/perspective.hpp"
+#include "geometry/r3_element.hpp"
 #include "geometry/rp2_point.hpp"
 #include "geometry/space.hpp"
 #include "geometry/sphere.hpp"
@@ -14,6 +15,7 @@
 #include "physics/discrete_trajectory.hpp"
 #include "physics/ephemeris.hpp"
 #include "physics/rigid_motion.hpp"
+#include "physics/trajectory.hpp"
 #include "quantities/quantities.hpp"
 
 namespace principia {
@@ -57,9 +59,9 @@ class Planetarium {
  public:
   class Parameters final {
    public:
-    // |sphere_radius_multiplier| defines the "dark area" around a celestial
-    // where we don't draw trajectories.  |angular_resolution| defines the limit
-    // beyond which spheres don't participate in hiding.  |field_of_view|
+    // `sphere_radius_multiplier` defines the "dark area" around a celestial
+    // where we don't draw trajectories.  `angular_resolution` defines the limit
+    // beyond which spheres don't participate in hiding.  `field_of_view`
     // is the half-angle of a cone outside of which not plotting takes place.
     explicit Parameters(double sphere_radius_multiplier,
                         Angle const& angular_resolution,
@@ -85,7 +87,7 @@ class Planetarium {
               PlottingToScaledSpaceConversion plotting_to_scaled_space);
 
   // A no-op method that just returns all the points in the trajectory defined
-  // by |begin| and |end|.
+  // by `begin` and `end`.
   RP2Lines<Length, Camera> PlotMethod0(
       DiscreteTrajectory<Barycentric> const& trajectory,
       DiscreteTrajectory<Barycentric>::iterator begin,
@@ -112,7 +114,7 @@ class Planetarium {
       Instant const& now,
       bool reverse) const;
 
-  // The same method, operating on the |Trajectory| interface.
+  // The same method, operating on the `Trajectory` interface.
   RP2Lines<Length, Camera> PlotMethod2(
       Trajectory<Barycentric> const& trajectory,
       Instant const& first_time,
@@ -128,13 +130,16 @@ class Planetarium {
       DiscreteTrajectory<Barycentric>::iterator begin,
       DiscreteTrajectory<Barycentric>::iterator end,
       Instant const& now,
+      Instant const& t_max,
       bool reverse,
       std::function<void(ScaledSpacePoint const&)> const& add_point,
       int max_points) const;
 
-  // The same method, operating on the |Trajectory| interface.
+  // The same method, operating on the `Trajectory` interface for any frame that
+  // can be converted to `Navigation`.
+  template<typename Frame>
   void PlotMethod3(
-      Trajectory<Barycentric> const& trajectory,
+      Trajectory<Frame> const& trajectory,
       Instant const& first_time,
       Instant const& last_time,
       Instant const& now,
@@ -144,13 +149,13 @@ class Planetarium {
       Length* minimal_distance = nullptr) const;
 
  private:
-  // Computes the coordinates of the spheres that represent the |ephemeris_|
-  // bodies.  These coordinates are in the |plotting_frame_| at time |now|.
+  // Computes the coordinates of the spheres that represent the `ephemeris_`
+  // bodies.  These coordinates are in the `plotting_frame_` at time `now`.
   std::vector<Sphere<Navigation>> ComputePlottableSpheres(
       Instant const& now) const;
 
-  // Computes the segments of the trajectory defined by |begin| and |end| that
-  // are not hidden by the |plottable_spheres|.
+  // Computes the segments of the trajectory defined by `begin` and `end` that
+  // are not hidden by the `plottable_spheres`.
   Segments<Navigation> ComputePlottableSegments(
       const std::vector<Sphere<Navigation>>& plottable_spheres,
       DiscreteTrajectory<Barycentric>::iterator begin,
@@ -178,3 +183,5 @@ using internal::ScaledSpacePoint;
 }  // namespace _planetarium
 }  // namespace ksp_plugin
 }  // namespace principia
+
+#include "ksp_plugin/planetarium_body.hpp"
